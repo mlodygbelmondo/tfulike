@@ -3,10 +3,10 @@ import {
   parseTikTokUsername,
   calculateTotalRounds,
   calculateRoundScores,
+  assignRoundOrder,
   generateSessionToken,
   SESSION_KEY,
   PROFILE_KEY,
-  TIKTOK_PROFILE_KEY,
   getStoredSession,
   storeSession,
   clearSession,
@@ -191,6 +191,58 @@ describe("calculateRoundScores", () => {
     expect(scores.get("p3")).toBe(10);
     expect(scores.has("p2")).toBe(false);
     expect(scores.has(correctPlayerId)).toBe(false);
+  });
+});
+
+describe("assignRoundOrder", () => {
+  it("preserves a deterministic planned order without reusing the same video", () => {
+    const assignments = assignRoundOrder(
+      new Map([
+        [
+          "p1",
+          [
+            {
+              tiktokUrl: "https://www.tiktok.com/@alice/video/1",
+              videoUrl: "https://cdn.example.com/1.mp4",
+              videoUrls: ["https://cdn.example.com/1.mp4"],
+              tiktokVideoId: "1",
+            },
+          ],
+        ],
+        [
+          "p2",
+          [
+            {
+              tiktokUrl: "https://www.tiktok.com/@bob/video/2",
+              videoUrl: "https://cdn.example.com/2.mp4",
+              videoUrls: ["https://cdn.example.com/2.mp4"],
+              tiktokVideoId: "2",
+            },
+          ],
+        ],
+      ]),
+      2,
+      () => 0
+    );
+
+    expect(assignments).toEqual([
+      {
+        playerId: "p1",
+        tiktokUrl: "https://www.tiktok.com/@alice/video/1",
+        videoUrl: "https://cdn.example.com/1.mp4",
+        videoUrls: ["https://cdn.example.com/1.mp4"],
+        tiktokVideoId: "1",
+        plannedRoundNumber: 1,
+      },
+      {
+        playerId: "p2",
+        tiktokUrl: "https://www.tiktok.com/@bob/video/2",
+        videoUrl: "https://cdn.example.com/2.mp4",
+        videoUrls: ["https://cdn.example.com/2.mp4"],
+        tiktokVideoId: "2",
+        plannedRoundNumber: 2,
+      },
+    ]);
   });
 });
 

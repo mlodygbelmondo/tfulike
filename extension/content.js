@@ -3,8 +3,8 @@
 // Listens for sync requests from the web app and relays them to the background service worker.
 
 (() => {
-  function postResponse(type, payload) {
-    window.postMessage({ type, payload }, "*");
+  function postResponse(type, payload, requestId) {
+    window.postMessage({ type, payload, requestId }, "*");
   }
 
   function getExtensionVersion() {
@@ -20,7 +20,7 @@
     // Only accept messages from the same window
     if (event.source !== window) return;
 
-    const { type, payload } = event.data || {};
+    const { type, payload, requestId } = event.data || {};
 
     if (type === "TAPUJEMY_SYNC_REQUEST") {
       try {
@@ -32,26 +32,27 @@
           (response) => {
             const runtimeError = chrome.runtime.lastError;
             if (runtimeError) {
-              postResponse("TAPUJEMY_SYNC_RESPONSE", {
-                ok: false,
-                error: "Extension reloaded. Refresh the page and try sync again.",
-              });
-              return;
-            }
+                postResponse("TAPUJEMY_SYNC_RESPONSE", {
+                  ok: false,
+                  error: "Extension reloaded. Refresh the page and try sync again.",
+                }, requestId);
+                return;
+              }
 
-            postResponse(
-              "TAPUJEMY_SYNC_RESPONSE",
-              response || { ok: false, error: "Empty response from extension" }
-            );
-          }
-        );
-      } catch {
+              postResponse(
+                "TAPUJEMY_SYNC_RESPONSE",
+                response || { ok: false, error: "Empty response from extension" },
+                requestId
+              );
+            }
+          );
+        } catch {
         postResponse("TAPUJEMY_SYNC_RESPONSE", {
           ok: false,
           error: "Extension reloaded. Refresh the page and try sync again.",
-        });
+        }, requestId);
+        }
       }
-    }
 
     if (type === "TAPUJEMY_VIDEO_REFRESH_REQUEST") {
       try {
@@ -63,26 +64,27 @@
           (response) => {
             const runtimeError = chrome.runtime.lastError;
             if (runtimeError) {
-              postResponse("TAPUJEMY_VIDEO_REFRESH_RESPONSE", {
-                ok: false,
-                error: "Extension reloaded. Refresh the page and try again.",
-              });
-              return;
-            }
+                postResponse("TAPUJEMY_VIDEO_REFRESH_RESPONSE", {
+                  ok: false,
+                  error: "Extension reloaded. Refresh the page and try again.",
+                }, requestId);
+                return;
+              }
 
-            postResponse(
-              "TAPUJEMY_VIDEO_REFRESH_RESPONSE",
-              response || { ok: false, error: "Empty response from extension" }
-            );
-          }
-        );
-      } catch {
+              postResponse(
+                "TAPUJEMY_VIDEO_REFRESH_RESPONSE",
+                response || { ok: false, error: "Empty response from extension" },
+                requestId
+              );
+            }
+          );
+        } catch {
         postResponse("TAPUJEMY_VIDEO_REFRESH_RESPONSE", {
           ok: false,
           error: "Extension reloaded. Refresh the page and try again.",
-        });
+        }, requestId);
+        }
       }
-    }
 
     if (type === "TAPUJEMY_FETCH_VIDEO_DATA") {
       try {
@@ -94,26 +96,27 @@
           (response) => {
             const runtimeError = chrome.runtime.lastError;
             if (runtimeError) {
-              postResponse("TAPUJEMY_VIDEO_DATA_RESPONSE", {
-                ok: false,
-                error: "Extension reloaded. Refresh the page and try again.",
-              });
-              return;
-            }
+                postResponse("TAPUJEMY_VIDEO_DATA_RESPONSE", {
+                  ok: false,
+                  error: "Extension reloaded. Refresh the page and try again.",
+                }, requestId);
+                return;
+              }
 
-            postResponse(
-              "TAPUJEMY_VIDEO_DATA_RESPONSE",
-              response || { ok: false, error: "Empty response from extension" }
-            );
-          }
-        );
-      } catch {
+              postResponse(
+                "TAPUJEMY_VIDEO_DATA_RESPONSE",
+                response || { ok: false, error: "Empty response from extension" },
+                requestId
+              );
+            }
+          );
+        } catch {
         postResponse("TAPUJEMY_VIDEO_DATA_RESPONSE", {
           ok: false,
           error: "Extension reloaded. Refresh the page and try again.",
-        });
+        }, requestId);
+        }
       }
-    }
 
     if (type === "TAPUJEMY_EXTENSION_CHECK") {
       const version = getExtensionVersion();

@@ -83,8 +83,10 @@ describe("POST /api/rooms/[pin]/rounds/next", () => {
     let idx = 0;
     const results = [
       { data: room, error: null },
-      // unused videos query returns empty array
-      { data: [], error: null },
+      // existing next round lookup
+      { data: null, error: null },
+      // planned next video lookup returns nothing
+      { data: null, error: null },
       // update room finished
       { data: null, error: null },
     ];
@@ -103,14 +105,58 @@ describe("POST /api/rooms/[pin]/rounds/next", () => {
     expect(json.finished).toBe(true);
   });
 
+  it("returns an existing next round instead of creating a duplicate", async () => {
+    const room = {
+      id: "r1",
+      pin: "1234",
+      status: "playing",
+      host_player_id: "host",
+      current_round: 2,
+      settings: { total_rounds: 9 },
+    };
+    const existingRound = { id: "round-3", round_number: 3, status: "voting" };
+    let idx = 0;
+    const results = [
+      { data: room, error: null },
+      { data: existingRound, error: null },
+      { data: null, error: null },
+    ];
+    const sb = {
+      from: vi.fn(() => {
+        const r = results[idx] || { data: null, error: null };
+        idx++;
+        return makeChain(r);
+      }),
+    };
+    vi.mocked(createClient).mockResolvedValue(sb as never);
+
+    const res = await POST(makeRequest({ player_id: "host" }), { params });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.finished).toBe(false);
+    expect(json.round).toEqual(existingRound);
+  });
+
   it("advances to next round successfully using stored video URLs", async () => {
     const room = { id: "r1", pin: "1234", status: "playing", host_player_id: "host", current_round: 2, settings: { total_rounds: 9 } };
     const newRound = { id: "round-3", round_number: 3, status: "voting" };
     let idx = 0;
     const results = [
       { data: room, error: null },
-      // unused videos
-      { data: [{ id: "v3", player_id: "p2", tiktok_url: "https://www.tiktok.com/@foo/video/3", video_url: "https://cdn.example.com/3.mp4" }], error: null },
+      // existing next round lookup
+      { data: null, error: null },
+      // planned next video lookup
+      {
+        data: {
+          id: "v3",
+          player_id: "p2",
+          tiktok_url: "https://www.tiktok.com/@foo/video/3",
+          tiktok_video_id: "3",
+          video_url: "https://cdn.example.com/3.mp4",
+          planned_round_number: 3,
+        },
+        error: null,
+      },
       // mark video used
       { data: null, error: null },
       // mark current round done

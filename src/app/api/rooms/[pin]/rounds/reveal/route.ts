@@ -141,10 +141,29 @@ export async function POST(
     }
 
     // Update round status to reveal
-    await supabase
+    const { data: revealedRounds } = await supabase
       .from("rounds")
       .update({ status: "reveal" })
-      .eq("id", round.id);
+      .eq("id", round.id)
+      .eq("status", "voting")
+      .select("id");
+
+    if (!revealedRounds || revealedRounds.length === 0) {
+      const { data: players } = await supabase
+        .from("players")
+        .select("*")
+        .eq("room_id", room.id)
+        .order("score", { ascending: false });
+
+      return NextResponse.json({
+        round: { ...round, status: "reveal" },
+        correct_player_id: round.correct_player_id,
+        votes: votes || [],
+        score_deltas: {},
+        players,
+        already_revealed: true,
+      });
+    }
 
     // Get updated players
     const { data: players } = await supabase

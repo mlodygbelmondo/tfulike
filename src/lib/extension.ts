@@ -26,6 +26,10 @@ export interface VideoRefreshResponse {
   error?: string;
 }
 
+function createRequestId(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 export interface VideoDataResponse {
   ok: boolean;
   base64?: string;
@@ -134,6 +138,8 @@ export function requestVideoRefresh(
       return;
     }
 
+    const requestId = createRequestId();
+
     const timeout = setTimeout(() => {
       window.removeEventListener("message", handler);
       resolve({ ok: false, error: "Extension did not respond (timeout)" });
@@ -141,7 +147,10 @@ export function requestVideoRefresh(
 
     function handler(event: MessageEvent) {
       if (event.source !== window) return;
-      if (event.data?.type === "TAPUJEMY_VIDEO_REFRESH_RESPONSE") {
+      if (
+        event.data?.type === "TAPUJEMY_VIDEO_REFRESH_RESPONSE" &&
+        event.data?.requestId === requestId
+      ) {
         clearTimeout(timeout);
         window.removeEventListener("message", handler);
         resolve(event.data.payload || { ok: false, error: "Empty response" });
@@ -152,6 +161,7 @@ export function requestVideoRefresh(
     window.postMessage(
       {
         type: "TAPUJEMY_VIDEO_REFRESH_REQUEST",
+        requestId,
         payload: request,
       },
       "*"
@@ -170,6 +180,8 @@ export function requestVideoDataUri(url: string): Promise<string> {
       return;
     }
 
+    const requestId = createRequestId();
+
     const timeout = setTimeout(() => {
       window.removeEventListener("message", handler);
       reject(new Error("Extension did not respond (timeout)"));
@@ -177,7 +189,10 @@ export function requestVideoDataUri(url: string): Promise<string> {
 
     function handler(event: MessageEvent) {
       if (event.source !== window) return;
-      if (event.data?.type === "TAPUJEMY_VIDEO_DATA_RESPONSE") {
+      if (
+        event.data?.type === "TAPUJEMY_VIDEO_DATA_RESPONSE" &&
+        event.data?.requestId === requestId
+      ) {
         clearTimeout(timeout);
         window.removeEventListener("message", handler);
 
@@ -197,6 +212,7 @@ export function requestVideoDataUri(url: string): Promise<string> {
     window.postMessage(
       {
         type: "TAPUJEMY_FETCH_VIDEO_DATA",
+        requestId,
         payload: { url },
       },
       "*"

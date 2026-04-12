@@ -14,9 +14,9 @@ export default async function JoinPage({
   const dict = await getDictionary(lang);
 
   return (
-    <main className="flex flex-col items-center min-h-screen p-6">
+    <main className="flex min-h-screen flex-col p-6">
       {/* Back */}
-      <div className="w-full max-w-xs mb-6">
+      <div className="mb-6 w-full">
         <Link
           href={`/${lang}`}
           className="text-muted text-sm flex items-center gap-1"
@@ -27,7 +27,7 @@ export default async function JoinPage({
 
       <h1 className="text-3xl font-bold mb-8">{dict.join.title}</h1>
 
-      <div className="w-full max-w-xs">
+      <div className="flex w-full flex-1 flex-col">
         <JoinRoomForm lang={lang} dict={dict} />
       </div>
     </main>

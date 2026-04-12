@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { calculateTotalRounds } from "@/lib/game";
+import { assignRoundOrder, calculateTotalRounds } from "@/lib/game";
 import type { RoomSettings } from "@/lib/types";
 
 /**
@@ -133,68 +133,20 @@ export async function POST(
     // Delete any existing videos for this room (clean start)
     await supabase.from("videos").delete().eq("room_id", room.id);
 
-    // Distribute videos across rounds (non-flat: weighted random selection)
-    // Each round gets 1 video from a randomly selected player.
-    // Weight is proportional to remaining videos for that player.
-    const videoPool = new Map<
-      string,
-      Array<{ tiktokUrl: string | null; videoUrl: string | null; videoUrls: string[] }>
-    >();
-    for (const [playerId, likes] of likesByPlayer) {
-      // Shuffle each player's likes
-      const shuffled = [...likes]
-        .sort(() => Math.random() - 0.5)
-        .map((l) => ({
-          tiktokUrl: l.tiktok_url,
-          videoUrl: l.video_url,
-          videoUrls: l.video_urls,
-        }))
-        .filter((l) => l.videoUrls.length > 0);
-      videoPool.set(playerId, shuffled);
-    }
-
-    const roundAssignments: Array<{
-      playerId: string;
-      tiktokUrl: string | null;
-      videoUrl: string | null;
-      videoUrls: string[];
-    }> = [];
-
-    for (let i = 0; i < totalRounds; i++) {
-      // Build weighted list: players with more videos are more likely to be picked
-      const candidates: Array<{ playerId: string; weight: number }> = [];
-      for (const [pid, vids] of videoPool) {
-        if (vids.length > 0) {
-          candidates.push({ playerId: pid, weight: vids.length });
-        }
-      }
-
-      if (candidates.length === 0) {
-        // All videos exhausted — end rounds early
-        break;
-      }
-
-      // Weighted random selection
-      const totalWeight = candidates.reduce((s, c) => s + c.weight, 0);
-      let rand = Math.random() * totalWeight;
-      let selected = candidates[0];
-      for (const c of candidates) {
-        rand -= c.weight;
-        if (rand <= 0) {
-          selected = c;
-          break;
-        }
-      }
-
-      const playerVids = videoPool.get(selected.playerId)!;
-      const video = playerVids.pop()!;
-      roundAssignments.push({
-        playerId: selected.playerId,
-        tiktokUrl: video.tiktokUrl,
-        videoUrl: video.videoUrl,
-        videoUrls: video.videoUrls,
-      });
-    }
+    const roundAssignments = assignRoundOrder(
+      new Map(
+        Array.from(likesByPlayer.entries()).map(([playerId, likes]) => [
+          playerId,
+          likes.map((like) => ({
+            tiktokUrl: like.tiktok_url,
+            videoUrl: like.video_url,
+            videoUrls: like.video_urls,
+            tiktokVideoId: like.tiktok_video_id,
+          })),
+        ])
+      ),
+      totalRounds
+    );
 
     const actualTotalRounds = roundAssignments.length;
     if (actualTotalRounds === 0) {
@@ -209,8 +161,10 @@ export async function POST(
       room_id: room.id,
       player_id: ra.playerId,
       tiktok_url: ra.tiktokUrl,
+      tiktok_video_id: ra.tiktokVideoId,
       video_url: ra.videoUrl,
       video_urls: ra.videoUrls,
+      planned_round_number: ra.plannedRoundNumber,
       used: false,
     }));
 

@@ -151,7 +151,14 @@ describe("POST /api/rooms/[pin]/start", () => {
     const room = { id: "r1", pin: "1234", status: "lobby", host_player_id: "host-1", settings: { max_rounds: 3 } };
     const round = { id: "round-1", round_number: 1, status: "voting" };
     const insertedVideos = [
-      { id: "v1", player_id: "p1", tiktok_url: "https://tiktok.com/@user1/video/1", video_url: "https://example.com/1.mp4" },
+      {
+        id: "v1",
+        player_id: "p1",
+        tiktok_url: "https://tiktok.com/@user1/video/1",
+        tiktok_video_id: "1",
+        video_url: "https://example.com/1.mp4",
+        planned_round_number: 1,
+      },
     ];
     let idx = 0;
     const results = [

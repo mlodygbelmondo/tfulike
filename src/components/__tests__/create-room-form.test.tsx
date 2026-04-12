@@ -55,6 +55,16 @@ describe("CreateRoomForm", () => {
     ).toBeInTheDocument();
   });
 
+  it("keeps the create button pinned to the bottom of the form column", () => {
+    storeProfile();
+
+    render(<CreateRoomForm lang="en" dict={mockDict} />);
+
+    expect(screen.getByRole("button", { name: mockDict.create.create })).toHaveClass(
+      "mt-auto"
+    );
+  });
+
   it("submit button is disabled when nickname is empty", () => {
     render(<CreateRoomForm lang="en" dict={mockDict} />);
     const btn = screen.getByRole("button", { name: mockDict.create.create });

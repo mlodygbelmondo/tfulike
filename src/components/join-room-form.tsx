@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getStoredProfile, storeSession } from "@/lib/game";
+import { getStoredProfile, storeSession, type StoredProfile } from "@/lib/game";
 import type { Dictionary } from "@/lib/dictionaries";
 
 export function JoinRoomForm({
@@ -16,25 +16,22 @@ export function JoinRoomForm({
   initialPin?: string;
 }) {
   const router = useRouter();
+  const [storedProfile] = useState<StoredProfile | null>(() =>
+    getStoredProfile()
+  );
   const [pin, setPin] = useState(initialPin || "");
-  const [nickname, setNickname] = useState("");
-  const [color, setColor] = useState("");
-  const [tiktokUsername, setTiktokUsername] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    const storedProfile = getStoredProfile();
-
     if (!storedProfile) {
       router.replace(`/${lang}?profile=edit`);
-      return;
     }
+  }, [lang, router, storedProfile]);
 
-    setNickname(storedProfile.nickname);
-    setColor(storedProfile.color);
-    setTiktokUsername(storedProfile.tiktok);
-  }, [lang, router]);
+  const nickname = storedProfile?.nickname ?? "";
+  const color = storedProfile?.color ?? "";
+  const tiktokUsername = storedProfile?.tiktok ?? "";
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -72,7 +69,7 @@ export function JoinRoomForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-6 w-full">
+    <form onSubmit={handleSubmit} className="flex h-full w-full flex-1 flex-col gap-6">
       {/* PIN */}
       <div className="flex flex-col gap-2">
         <label htmlFor="pin" className="text-sm font-medium text-muted">
@@ -139,7 +136,7 @@ export function JoinRoomForm({
           !nickname.trim() ||
           !tiktokUsername
         }
-        className="h-14 rounded-2xl bg-accent text-white font-bold text-lg transition-transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+        className="mt-auto h-14 rounded-2xl bg-accent text-white font-bold text-lg transition-transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {loading ? dict.join.joining : dict.join.join}
       </button>

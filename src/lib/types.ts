@@ -43,9 +43,11 @@ export interface Video {
   room_id: string;
   player_id: string;
   tiktok_url: string | null;
+  tiktok_video_id?: string | null;
   video_url: string | null; // direct MP4 URL
   video_urls?: string[] | null;
   used: boolean;
+  planned_round_number?: number | null;
   created_at: string;
 }
 

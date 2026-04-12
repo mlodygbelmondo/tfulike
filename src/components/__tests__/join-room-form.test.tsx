@@ -55,6 +55,16 @@ describe("JoinRoomForm", () => {
     ).toBeInTheDocument();
   });
 
+  it("keeps the submit button pinned to the bottom of the form column", () => {
+    storeProfile();
+
+    render(<JoinRoomForm lang="en" dict={mockDict} />);
+
+    expect(screen.getByRole("button", { name: mockDict.join.join })).toHaveClass(
+      "mt-auto"
+    );
+  });
+
   it("submit is disabled when PIN and nickname are empty", () => {
     render(<JoinRoomForm lang="en" dict={mockDict} />);
     const btn = screen.getByRole("button", { name: mockDict.join.join });

@@ -44,14 +44,30 @@ export async function POST(
       return NextResponse.json({ finished: true });
     }
 
-    // Pick next unused video randomly
-    const { data: unusedVideos } = await supabase
-      .from("videos")
-      .select("id, player_id, tiktok_url, video_url, video_urls")
+    const { data: existingNextRound } = await supabase
+      .from("rounds")
+      .select("*")
       .eq("room_id", room.id)
-      .eq("used", false);
+      .eq("round_number", nextRoundNum)
+      .maybeSingle();
 
-    if (!unusedVideos || unusedVideos.length === 0) {
+    if (existingNextRound) {
+      await supabase
+        .from("rooms")
+        .update({ current_round: nextRoundNum })
+        .eq("id", room.id);
+
+      return NextResponse.json({ round: existingNextRound, finished: false });
+    }
+
+    const { data: nextVideo } = await supabase
+      .from("videos")
+      .select("id, player_id, tiktok_url, video_url, video_urls, planned_round_number")
+      .eq("room_id", room.id)
+      .eq("planned_round_number", nextRoundNum)
+      .maybeSingle();
+
+    if (!nextVideo) {
       // No more videos — end game
       await supabase
         .from("rooms")
@@ -60,14 +76,11 @@ export async function POST(
       return NextResponse.json({ finished: true });
     }
 
-    const video =
-      unusedVideos[Math.floor(Math.random() * unusedVideos.length)];
-
     // Mark used
     await supabase
       .from("videos")
       .update({ used: true })
-      .eq("id", video.id);
+      .eq("id", nextVideo.id);
 
     // Mark current round as done
     await supabase
@@ -82,8 +95,8 @@ export async function POST(
       .insert({
         room_id: room.id,
         round_number: nextRoundNum,
-        video_id: video.id,
-        correct_player_id: video.player_id,
+        video_id: nextVideo.id,
+        correct_player_id: nextVideo.player_id,
         status: "voting",
         deadline: null,
       })
@@ -94,7 +107,7 @@ export async function POST(
       await supabase
         .from("videos")
         .update({ used: false })
-        .eq("id", video.id);
+        .eq("id", nextVideo.id);
       return NextResponse.json(
         { error: "Failed to create next round" },
         { status: 500 }

@@ -39,6 +39,7 @@ describe("GamePlayView", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
+    vi.mocked(requestVideoDataUri).mockResolvedValue("blob:mock-video");
   });
 
   it("shows the current player as a voting option", async () => {
@@ -231,7 +232,197 @@ describe("GamePlayView", () => {
       expect(videoElement).not.toBeNull();
       expect(requestVideoDataUri).toHaveBeenCalledWith(rawVideoUrl);
       expect(videoElement?.getAttribute("src")).toBe(dataUri);
+      expect(videoElement?.muted).toBe(false);
       expect(videoElement?.hasAttribute("controls")).toBe(false);
+    });
+  });
+
+  it("shows a loading state instead of unavailable while resolving the video blob", async () => {
+    localStorage.setItem(
+      "tfyoulike_session",
+      JSON.stringify({ playerId: "p1", sessionToken: "token", roomPin: "1234" })
+    );
+
+    let resolveVideo: ((value: string) => void) | undefined;
+    vi.mocked(requestVideoDataUri).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveVideo = resolve;
+        })
+    );
+
+    let callIndex = 0;
+    const room = {
+      id: "r1",
+      pin: "1234",
+      status: "playing",
+      current_round: 1,
+      settings: { total_rounds: 3 },
+    };
+    const players = [
+      {
+        id: "p1",
+        room_id: "r1",
+        nickname: "Alice",
+        color: "#ff2d55",
+        session_token: "token",
+        is_host: true,
+        score: 0,
+        videos_ready: true,
+        tiktok_username: "alice",
+        sync_status: "synced",
+        sync_error: null,
+        synced_at: null,
+        created_at: "2025-01-01",
+      },
+    ];
+    const round = {
+      id: "round-1",
+      room_id: "r1",
+      round_number: 1,
+      video_id: "video-1",
+      correct_player_id: "p1",
+      status: "voting",
+      deadline: null,
+      started_at: "2025-01-01",
+      ended_at: null,
+    };
+    const video = {
+      id: "video-1",
+      room_id: "r1",
+      player_id: "p1",
+      tiktok_url: "https://www.tiktok.com/@alice/video/1",
+      video_url: "https://example.com/video.mp4",
+      video_urls: ["https://example.com/video.mp4"],
+      used: true,
+      created_at: "2025-01-01",
+    };
+
+    const supabase = {
+      from: vi.fn((table: string) => {
+        const responses = {
+          rooms: [{ data: room, error: null }],
+          players: [{ data: players, error: null }],
+          rounds: [{ data: round, error: null }],
+          videos: [{ data: video, error: null }],
+          votes: [
+            { data: null, error: null },
+            { data: null, error: null, count: 0 },
+          ],
+        } as const;
+
+        const queue = responses[table as keyof typeof responses];
+        const index = table === "votes" ? callIndex++ : 0;
+        return makeChain(queue?.[index] || { data: null, error: null });
+      }),
+      channel: vi.fn(() => ({
+        on: vi.fn().mockReturnThis(),
+        subscribe: vi.fn().mockReturnValue({}),
+      })),
+      removeChannel: vi.fn(),
+    };
+
+    vi.mocked(createClient).mockReturnValue(supabase as never);
+
+    render(<GamePlayView lang="pl" pin="1234" dict={mockDict} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Loading video...")).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText("Video unavailable in this round.")).not.toBeInTheDocument();
+
+    expect(resolveVideo).toBeTypeOf("function");
+    resolveVideo?.("blob:loaded-video");
+
+    await waitFor(() => {
+      expect(screen.queryByText("Loading video...")).not.toBeInTheDocument();
+    });
+  });
+
+  it("renders the sound control as tap to mute by default", async () => {
+    localStorage.setItem(
+      "tfyoulike_session",
+      JSON.stringify({ playerId: "p1", sessionToken: "token", roomPin: "1234" })
+    );
+
+    let callIndex = 0;
+    const room = {
+      id: "r1",
+      pin: "1234",
+      status: "playing",
+      current_round: 1,
+      settings: { total_rounds: 3 },
+    };
+    const players = [
+      {
+        id: "p1",
+        room_id: "r1",
+        nickname: "Alice",
+        color: "#ff2d55",
+        session_token: "token",
+        is_host: true,
+        score: 0,
+        videos_ready: true,
+        tiktok_username: "alice",
+        sync_status: "synced",
+        sync_error: null,
+        synced_at: null,
+        created_at: "2025-01-01",
+      },
+    ];
+    const round = {
+      id: "round-1",
+      room_id: "r1",
+      round_number: 1,
+      video_id: "video-1",
+      correct_player_id: "p1",
+      status: "voting",
+      deadline: null,
+      started_at: "2025-01-01",
+      ended_at: null,
+    };
+    const video = {
+      id: "video-1",
+      room_id: "r1",
+      player_id: "p1",
+      tiktok_url: "https://www.tiktok.com/@alice/video/1",
+      video_url: "https://example.com/video.mp4",
+      video_urls: ["https://example.com/video.mp4"],
+      used: true,
+      created_at: "2025-01-01",
+    };
+
+    const supabase = {
+      from: vi.fn((table: string) => {
+        const responses = {
+          rooms: [{ data: room, error: null }],
+          players: [{ data: players, error: null }],
+          rounds: [{ data: round, error: null }],
+          videos: [{ data: video, error: null }],
+          votes: [
+            { data: null, error: null },
+            { data: null, error: null, count: 0 },
+          ],
+        } as const;
+
+        const queue = responses[table as keyof typeof responses];
+        const index = table === "votes" ? callIndex++ : 0;
+        return makeChain(queue?.[index] || { data: null, error: null });
+      }),
+      channel: vi.fn(() => ({
+        on: vi.fn().mockReturnThis(),
+        subscribe: vi.fn().mockReturnValue({}),
+      })),
+      removeChannel: vi.fn(),
+    };
+
+    vi.mocked(createClient).mockReturnValue(supabase as never);
+
+    render(<GamePlayView lang="pl" pin="1234" dict={mockDict} />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Tap to mute" })).toBeInTheDocument();
     });
   });
 

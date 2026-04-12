@@ -30,5 +30,9 @@ export default async function LangLayout({
   const { lang } = await params;
   if (!isValidLocale(lang)) notFound();
 
-  return <>{children}</>;
+  return (
+    <div className="mx-auto flex min-h-screen w-full max-w-[430px] flex-col">
+      {children}
+    </div>
+  );
 }

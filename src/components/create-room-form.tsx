@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getStoredProfile, storeSession } from "@/lib/game";
+import { getStoredProfile, storeSession, type StoredProfile } from "@/lib/game";
 import type { Dictionary } from "@/lib/dictionaries";
 
 export function CreateRoomForm({
@@ -14,24 +14,21 @@ export function CreateRoomForm({
   dict: Dictionary;
 }) {
   const router = useRouter();
-  const [nickname, setNickname] = useState("");
-  const [color, setColor] = useState("");
-  const [tiktokUsername, setTiktokUsername] = useState("");
+  const [storedProfile] = useState<StoredProfile | null>(() =>
+    getStoredProfile()
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    const storedProfile = getStoredProfile();
-
     if (!storedProfile) {
       router.replace(`/${lang}?profile=edit`);
-      return;
     }
+  }, [lang, router, storedProfile]);
 
-    setNickname(storedProfile.nickname);
-    setColor(storedProfile.color);
-    setTiktokUsername(storedProfile.tiktok);
-  }, [lang, router]);
+  const nickname = storedProfile?.nickname ?? "";
+  const color = storedProfile?.color ?? "";
+  const tiktokUsername = storedProfile?.tiktok ?? "";
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -68,7 +65,7 @@ export function CreateRoomForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-6 w-full">
+    <form onSubmit={handleSubmit} className="flex h-full w-full flex-1 flex-col gap-6">
       <div className="rounded-2xl border border-surface-2 bg-surface p-4">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -106,7 +103,7 @@ export function CreateRoomForm({
       <button
         type="submit"
         disabled={loading || !nickname.trim() || !tiktokUsername}
-        className="h-14 rounded-2xl bg-accent text-white font-bold text-lg transition-transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+        className="mt-auto h-14 rounded-2xl bg-accent text-white font-bold text-lg transition-transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {loading ? dict.create.creating : dict.create.create}
       </button>

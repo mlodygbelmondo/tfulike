@@ -138,4 +138,35 @@ describe("POST /api/rooms/[pin]/rounds/reveal", () => {
     const json = await res.json();
     expect(json.already_revealed).toBe(true);
   });
+
+  it("returns already_revealed when another request wins the reveal transition", async () => {
+    const room = { id: "r1", pin: "1234", status: "playing", host_player_id: "host", current_round: 1 };
+    const round = { id: "round-1", room_id: "r1", round_number: 1, correct_player_id: "p1", status: "voting" };
+    const votes = [{ id: "v1", player_id: "p2", guessed_player_id: "p1", created_at: "2025-01-01T00:00:00Z" }];
+
+    let idx = 0;
+    const results = [
+      { data: room, error: null },
+      { data: round, error: null },
+      { data: votes, error: null },
+      { data: null, error: null },
+      { data: [{ id: "p2", score: 0 }], error: null },
+      { data: null, error: null },
+      { data: [], error: null },
+      { data: [{ id: "p1", score: 0 }, { id: "p2", score: 10 }], error: null },
+    ];
+    const sb = {
+      from: vi.fn(() => {
+        const r = results[idx] || { data: null, error: null };
+        idx++;
+        return makeChain(r);
+      }),
+    };
+    vi.mocked(createClient).mockResolvedValue(sb as never);
+
+    const res = await POST(makeRequest({ player_id: "host" }), { params });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.already_revealed).toBe(true);
+  });
 });

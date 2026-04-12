@@ -244,7 +244,6 @@ export function LobbyView({
   }
 
   const isHost = currentPlayer?.is_host;
-  const allHaveTikTok = players.length >= 2 && players.every((p) => p.tiktok_username);
   const allSynced = players.length >= 2 && players.every((p) => p.sync_status === "synced");
   const canStart = allSynced;
   const myTikTokReady = !!currentPlayer?.tiktok_username;
@@ -346,12 +345,12 @@ export function LobbyView({
           <h2 className="text-sm font-medium text-muted mb-2">
             {dict.lobby.roundCount}
           </h2>
-          <div className="flex flex-wrap gap-2">
+          <div className="grid grid-cols-3 gap-2">
             {ROUND_COUNT_OPTIONS.map((count) => (
               <button
                 key={count}
                 onClick={() => handleRoundCountChange(count)}
-                className={`px-3 py-2 rounded-xl text-sm font-medium transition-all active:scale-95 ${
+                className={`h-11 w-full rounded-xl px-3 py-2 text-center text-sm font-medium transition-all active:scale-95 ${
                   selectedRounds === count
                     ? "bg-accent text-white"
                     : "bg-surface border border-surface-2 text-muted hover:border-accent"

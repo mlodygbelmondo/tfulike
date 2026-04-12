@@ -103,16 +103,21 @@ export function GamePlayView({
   const [votedFor, setVotedFor] = useState<string | null>(null);
   const [revealData, setRevealData] = useState<RevealData | null>(null);
   const [totalRounds, setTotalRounds] = useState(0);
+  const [roomId, setRoomId] = useState<string | null>(null);
   const [allVoted, setAllVoted] = useState(false);
   const [error, setError] = useState("");
   const [slotRevealing, setSlotRevealing] = useState(false);
   const [slotDone, setSlotDone] = useState(false);
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
+  const [soundEnabled, setSoundEnabled] = useState(true);
   const [videoCandidates, setVideoCandidates] = useState<string[]>([]);
   const [videoCandidateIndex, setVideoCandidateIndex] = useState(0);
   const [videoLoadFailed, setVideoLoadFailed] = useState(false);
   const [videoRefreshing, setVideoRefreshing] = useState(false);
   const [videoRefreshAttempted, setVideoRefreshAttempted] = useState(false);
+  const [videoResolving, setVideoResolving] = useState(false);
+  const [revealSubmitting, setRevealSubmitting] = useState(false);
+  const [nextRoundSubmitting, setNextRoundSubmitting] = useState(false);
   const revealTriggeredRef = useRef(false);
   const videoElementRef = useRef<HTMLVideoElement | null>(null);
   const videoLoadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -120,8 +125,22 @@ export function GamePlayView({
   const videoRefreshAttemptedRef = useRef(false);
   const resolvedVideoSrcRef = useRef<string | null>(null);
   const videoResolveTokenRef = useRef(0);
+  const currentVideoIdRef = useRef<string | null>(null);
+  const fetchRoundTokenRef = useRef(0);
+
+  const videoSourceKey = [
+    video?.id ?? "",
+    video?.video_url ?? "",
+    Array.isArray(video?.video_urls) ? video.video_urls.join("|") : "",
+  ].join("::");
+
+  useEffect(() => {
+    currentVideoIdRef.current = video?.id ?? null;
+  }, [video?.id]);
 
   const fetchRound = useCallback(async () => {
+    const fetchToken = fetchRoundTokenRef.current + 1;
+    fetchRoundTokenRef.current = fetchToken;
     const supabase = createClient();
     const session = getStoredSession();
 
@@ -137,7 +156,8 @@ export function GamePlayView({
       .eq("pin", pin)
       .single();
 
-    if (!room) return;
+    if (!room || fetchRoundTokenRef.current !== fetchToken) return;
+    setRoomId(room.id);
 
     if (room.status === "finished") {
       router.push(`/${lang}/room/${pin}/results`);
@@ -159,6 +179,8 @@ export function GamePlayView({
       .eq("room_id", room.id)
       .order("score", { ascending: false });
 
+    if (fetchRoundTokenRef.current !== fetchToken) return;
+
     setPlayers((playersData as Player[]) || []);
 
     const me = playersData?.find(
@@ -174,7 +196,7 @@ export function GamePlayView({
       .eq("round_number", room.current_round)
       .single();
 
-    if (!roundData) return;
+    if (!roundData || fetchRoundTokenRef.current !== fetchToken) return;
     setRound(roundData as Round);
 
     // Get video for this round
@@ -185,7 +207,7 @@ export function GamePlayView({
         .eq("id", roundData.video_id)
         .single();
 
-      if (videoData) {
+      if (videoData && fetchRoundTokenRef.current === fetchToken) {
         setVideo(videoData as Video);
         logVideoDebug("round-video-loaded", {
           pin,
@@ -215,6 +237,8 @@ export function GamePlayView({
       .eq("player_id", session.playerId)
       .maybeSingle();
 
+    if (fetchRoundTokenRef.current !== fetchToken) return;
+
     if (existingVote) {
       setVotedFor(existingVote.guessed_player_id);
     } else {
@@ -226,6 +250,8 @@ export function GamePlayView({
       .from("votes")
       .select("*", { count: "exact", head: true })
       .eq("round_id", roundData.id);
+
+    if (fetchRoundTokenRef.current !== fetchToken) return;
 
     const playerCount = playersData?.length || 0;
     setAllVoted(!!voteCount && voteCount >= playerCount);
@@ -258,7 +284,9 @@ export function GamePlayView({
     setVideoLoadFailed(false);
     setVideoRefreshing(false);
     setVideoRefreshAttempted(false);
+    setVideoResolving(candidates.length > 0);
     videoRefreshAttemptedRef.current = false;
+    setSoundEnabled(true);
     setVideoSrc(null);
 
     logVideoDebug("video-candidates-prepared", {
@@ -270,7 +298,7 @@ export function GamePlayView({
         summary: summarizeVideoUrlForDebug(url),
       })),
     });
-  }, [video?.id, video?.video_url, video?.video_urls]);
+  }, [videoSourceKey]);
 
   useEffect(() => {
     const candidate = videoCandidates[videoCandidateIndex] || null;
@@ -283,12 +311,14 @@ export function GamePlayView({
     }
 
     if (!candidate) {
+      setVideoResolving(false);
       setVideoSrc(null);
       return;
     }
 
     setVideoSrc(null);
     setVideoLoadFailed(false);
+    setVideoResolving(true);
 
     requestVideoDataUri(candidate)
       .then((blobUrl) => {
@@ -298,6 +328,7 @@ export function GamePlayView({
         }
 
         resolvedVideoSrcRef.current = blobUrl;
+        setVideoResolving(false);
         setVideoSrc(blobUrl);
       })
       .catch((err) => {
@@ -323,6 +354,7 @@ export function GamePlayView({
           return;
         }
 
+        setVideoResolving(false);
         setVideoLoadFailed(true);
       });
 
@@ -331,8 +363,7 @@ export function GamePlayView({
         videoResolveTokenRef.current += 1;
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [videoCandidates, videoCandidateIndex, video?.id]);
+  }, [videoCandidates, videoCandidateIndex, videoSourceKey]);
 
   useEffect(() => {
     return () => {
@@ -410,6 +441,18 @@ export function GamePlayView({
         videoLoadTimeoutRef.current = null;
       }
       const element = event.currentTarget;
+
+      element.muted = !soundEnabled;
+
+      void element.play().catch((error) => {
+        logVideoDebug("video-play-start-failed", {
+          videoId: video?.id ?? null,
+          error: String(error instanceof Error ? error.message : error),
+        });
+      });
+
+      setVideoResolving(false);
+
       logVideoDebug("video-can-play", {
         videoId: video?.id ?? null,
         candidateIndex: videoCandidateIndex,
@@ -418,8 +461,29 @@ export function GamePlayView({
         readyState: element.readyState,
       });
     },
-    [video?.id, videoCandidateIndex, videoSrc]
+    [soundEnabled, video?.id, videoCandidateIndex, videoSrc]
   );
+
+  const handleSoundToggle = useCallback(async () => {
+    const element = videoElementRef.current;
+    if (!element) return;
+
+    const nextSoundEnabled = !soundEnabled;
+
+    element.muted = !nextSoundEnabled;
+    setSoundEnabled(nextSoundEnabled);
+
+    try {
+      await element.play();
+    } catch (error) {
+      element.muted = !soundEnabled;
+      setSoundEnabled(soundEnabled);
+      logVideoDebug("video-sound-toggle-failed", {
+        videoId: video?.id ?? null,
+        error: String(error instanceof Error ? error.message : error),
+      });
+    }
+  }, [soundEnabled, video?.id]);
 
   /**
    * Try to get fresh video URLs from the extension by re-scraping TikTok.
@@ -427,12 +491,14 @@ export function GamePlayView({
    */
   async function attemptExtensionRefresh() {
     if (!video || videoRefreshAttempted) return;
+    const refreshForVideoId = video.id;
 
     setVideoRefreshAttempted(true);
     videoRefreshAttemptedRef.current = true;
 
     if (!extensionPresentRef.current) {
       logVideoDebug("extension-refresh-skip", { reason: "extension not present" });
+      setVideoLoadFailed(true);
       return;
     }
 
@@ -440,6 +506,7 @@ export function GamePlayView({
     const tiktokVideoId = extractVideoIdFromUrl(video.tiktok_url);
     if (!tiktokVideoId) {
       logVideoDebug("extension-refresh-skip", { reason: "no video id" });
+      setVideoLoadFailed(true);
       return;
     }
 
@@ -451,6 +518,10 @@ export function GamePlayView({
         tiktok_video_id: tiktokVideoId,
         tiktok_url: video.tiktok_url,
       });
+
+      if (currentVideoIdRef.current !== refreshForVideoId) {
+        return;
+      }
 
       logVideoDebug("extension-refresh-result", {
         ok: result.ok,
@@ -466,7 +537,8 @@ export function GamePlayView({
             arr.indexOf(url) === index
         );
 
-        if (refreshedUrls.length === 0) {
+        if (!result.ok || refreshedUrls.length === 0) {
+          setVideoLoadFailed(true);
           return;
         }
 
@@ -474,14 +546,21 @@ export function GamePlayView({
         setVideoCandidates(refreshedUrls);
         setVideoCandidateIndex(0);
         setVideoLoadFailed(false);
+        setVideoResolving(true);
+        setSoundEnabled(true);
         setVideoSrc(null);
       }
     } catch (err) {
-      logVideoDebug("extension-refresh-error", {
-        error: String(err instanceof Error ? err.message : err),
-      });
+      if (currentVideoIdRef.current === refreshForVideoId) {
+        logVideoDebug("extension-refresh-error", {
+          error: String(err instanceof Error ? err.message : err),
+        });
+        setVideoLoadFailed(true);
+      }
     } finally {
-      setVideoRefreshing(false);
+      if (currentVideoIdRef.current === refreshForVideoId) {
+        setVideoRefreshing(false);
+      }
     }
   }
 
@@ -505,36 +584,57 @@ export function GamePlayView({
 
   // Realtime subscription
   useEffect(() => {
+    if (!roomId) return;
+
     const supabase = createClient();
 
-    const channel = supabase
+    let channel = supabase
       .channel(`game:${pin}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "rounds" },
+        { event: "*", schema: "public", table: "rooms", filter: `pin=eq.${pin}` },
         () => fetchRound()
       )
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "rooms" },
+        {
+          event: "*",
+          schema: "public",
+          table: "rounds",
+          filter: `room_id=eq.${roomId}`,
+        },
         () => fetchRound()
       )
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "players" },
+        {
+          event: "*",
+          schema: "public",
+          table: "players",
+          filter: `room_id=eq.${roomId}`,
+        },
         () => fetchRound()
-      )
-      .on(
+      );
+
+    if (round?.id) {
+      channel = channel.on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "votes" },
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "votes",
+          filter: `round_id=eq.${round.id}`,
+        },
         () => fetchRound()
-      )
-      .subscribe();
+      );
+    }
+
+    channel.subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [pin, fetchRound]);
+  }, [pin, roomId, round?.id, fetchRound]);
 
   async function handleVote(guessedPlayerId: string) {
     if (votedFor || !round || !currentPlayer) return;
@@ -564,6 +664,9 @@ export function GamePlayView({
   }
 
   async function handleReveal() {
+    if (revealSubmitting) return;
+
+    setRevealSubmitting(true);
     try {
       const res = await fetch(`/api/rooms/${pin}/rounds/reveal`, {
         method: "POST",
@@ -584,10 +687,15 @@ export function GamePlayView({
       }
     } catch {
       setError("Failed to reveal");
+    } finally {
+      setRevealSubmitting(false);
     }
   }
 
   async function handleNextRound() {
+    if (nextRoundSubmitting) return;
+
+    setNextRoundSubmitting(true);
     try {
       const res = await fetch(`/api/rooms/${pin}/rounds/next`, {
         method: "POST",
@@ -609,6 +717,8 @@ export function GamePlayView({
       }
     } catch {
       setError("Failed to advance round");
+    } finally {
+      setNextRoundSubmitting(false);
     }
   }
 
@@ -655,7 +765,7 @@ export function GamePlayView({
   const isHost = currentPlayer?.is_host;
 
   return (
-    <main className="flex flex-col min-h-screen p-4 gap-4 animate-fade-in">
+    <main className="flex min-h-screen flex-col gap-4 p-4 animate-fade-in">
       {/* Round counter */}
       <div className="flex items-center justify-between">
         <span className="text-sm text-muted">
@@ -670,73 +780,84 @@ export function GamePlayView({
       </div>
 
       {/* Video - MP4 playback */}
-      <div className="w-full aspect-[9/16] max-h-[50vh] bg-surface rounded-2xl overflow-hidden flex items-center justify-center">
+      <div className="relative flex-1 overflow-hidden rounded-2xl bg-surface">
         {videoSrc ? (
-          <video
-            key={videoSrc}
-            ref={videoElementRef}
-            src={videoSrc}
-            className="w-full h-full object-cover"
-            autoPlay
-            loop
-            playsInline
-            muted
-            preload="metadata"
-            onLoadStart={(event) => {
-              const element = event.currentTarget;
-              logVideoDebug("video-load-start", {
-                videoId: video?.id ?? null,
-                candidateIndex: videoCandidateIndex,
-                selected: summarizeVideoUrlForDebug(videoSrc),
-                currentSrc: summarizeVideoUrlForDebug(element.currentSrc || videoSrc),
-                networkState: element.networkState,
-                readyState: element.readyState,
-              });
-            }}
-            onLoadedMetadata={(event) => {
-              const element = event.currentTarget;
-              logVideoDebug("video-loaded-metadata", {
-                videoId: video?.id ?? null,
-                candidateIndex: videoCandidateIndex,
-                currentSrc: summarizeVideoUrlForDebug(element.currentSrc || videoSrc),
-                duration: Number.isFinite(element.duration) ? element.duration : null,
-                videoWidth: element.videoWidth,
-                videoHeight: element.videoHeight,
-                networkState: element.networkState,
-                readyState: element.readyState,
-              });
-            }}
-            onCanPlay={handleCanPlay}
-            onError={(event) => {
-              const element = event.currentTarget;
-              logVideoDebug("video-error", {
-                videoId: video?.id ?? null,
-                candidateIndex: videoCandidateIndex,
-                candidateCount: videoCandidates.length,
-                currentSrc: summarizeVideoUrlForDebug(element.currentSrc || videoSrc),
-                networkState: element.networkState,
-                readyState: element.readyState,
-                mediaErrorCode: element.error?.code ?? null,
-                mediaErrorMessage: element.error?.message ?? null,
-                willRetry: false,
-                willAttemptRefresh: !videoRefreshAttempted,
-              });
+          <>
+            <video
+              key={videoSrc}
+              ref={videoElementRef}
+              src={videoSrc}
+              className="w-full h-full object-cover"
+              autoPlay
+              loop
+              playsInline
+              muted={!soundEnabled}
+              preload="metadata"
+              onLoadStart={(event) => {
+                const element = event.currentTarget;
+                logVideoDebug("video-load-start", {
+                  videoId: video?.id ?? null,
+                  candidateIndex: videoCandidateIndex,
+                  selected: summarizeVideoUrlForDebug(videoSrc),
+                  currentSrc: summarizeVideoUrlForDebug(element.currentSrc || videoSrc),
+                  networkState: element.networkState,
+                  readyState: element.readyState,
+                });
+              }}
+              onLoadedMetadata={(event) => {
+                const element = event.currentTarget;
+                logVideoDebug("video-loaded-metadata", {
+                  videoId: video?.id ?? null,
+                  candidateIndex: videoCandidateIndex,
+                  currentSrc: summarizeVideoUrlForDebug(element.currentSrc || videoSrc),
+                  duration: Number.isFinite(element.duration) ? element.duration : null,
+                  videoWidth: element.videoWidth,
+                  videoHeight: element.videoHeight,
+                  networkState: element.networkState,
+                  readyState: element.readyState,
+                });
+              }}
+              onCanPlay={handleCanPlay}
+              onError={(event) => {
+                const element = event.currentTarget;
+                logVideoDebug("video-error", {
+                  videoId: video?.id ?? null,
+                  candidateIndex: videoCandidateIndex,
+                  candidateCount: videoCandidates.length,
+                  currentSrc: summarizeVideoUrlForDebug(element.currentSrc || videoSrc),
+                  networkState: element.networkState,
+                  readyState: element.readyState,
+                  mediaErrorCode: element.error?.code ?? null,
+                  mediaErrorMessage: element.error?.message ?? null,
+                  willRetry: false,
+                  willAttemptRefresh: !videoRefreshAttempted,
+                });
 
-              if (!videoRefreshAttempted) {
+                if (!videoRefreshAttempted) {
+                  setVideoSrc(null);
+                  attemptExtensionRefresh();
+                  return;
+                }
+
+                setVideoLoadFailed(true);
                 setVideoSrc(null);
-                attemptExtensionRefresh();
-                return;
-              }
-
-              setVideoLoadFailed(true);
-              setVideoSrc(null);
-            }}
-          />
+              }}
+            />
+            <button
+              type="button"
+              onClick={handleSoundToggle}
+              className="absolute right-3 top-3 rounded-full bg-black/70 px-3 py-1 text-xs font-medium text-white"
+            >
+              {soundEnabled ? "Tap to mute" : "Tap for sound"}
+            </button>
+          </>
         ) : (
           <div className="w-full h-full bg-surface rounded-2xl flex items-center justify-center p-4">
             <div className="text-center text-sm text-muted">
               {videoRefreshing ? (
                 <p className="animate-pulse">Refreshing video link...</p>
+              ) : videoResolving ? (
+                <p className="animate-pulse">Loading video...</p>
               ) : (
                 <>
                   <p>
@@ -763,7 +884,7 @@ export function GamePlayView({
 
       {/* Voting */}
       {phase === "voting" && (
-        <div className="flex flex-col gap-3 animate-slide-up">
+        <div className="mt-auto flex flex-col gap-3 animate-slide-up">
           <h2 className="text-lg font-bold text-center">
             {dict.game.whoseTiktok}
           </h2>
@@ -800,13 +921,14 @@ export function GamePlayView({
 
           {/* Host can force reveal */}
           {isHost && (
-            <button
-              onClick={handleReveal}
-              className="h-12 rounded-xl bg-surface-2 text-muted font-medium text-sm transition-all active:scale-95"
-            >
-              {dict.game.skipToReveal}
-            </button>
-          )}
+              <button
+                onClick={handleReveal}
+                disabled={revealSubmitting}
+                className="h-12 rounded-xl bg-surface-2 text-muted font-medium text-sm transition-all active:scale-95"
+              >
+                {revealSubmitting ? "Loading..." : dict.game.skipToReveal}
+              </button>
+            )}
         </div>
       )}
 
@@ -910,9 +1032,10 @@ export function GamePlayView({
           {isHost && !slotRevealing && (
             <button
               onClick={handleNextRound}
+              disabled={nextRoundSubmitting}
               className="h-14 w-full max-w-sm rounded-2xl bg-accent text-white font-bold text-lg transition-transform active:scale-95"
             >
-              {dict.game.nextRound}
+              {nextRoundSubmitting ? "Loading..." : dict.game.nextRound}
             </button>
           )}
         </div>

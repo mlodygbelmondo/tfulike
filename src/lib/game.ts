@@ -2,6 +2,18 @@
 
 import type { RoomSettings } from "./types";
 
+interface RoundOrderCandidate {
+  tiktokUrl: string | null;
+  videoUrl: string | null;
+  videoUrls: string[];
+  tiktokVideoId: string;
+}
+
+interface RoundAssignment extends RoundOrderCandidate {
+  playerId: string;
+  plannedRoundNumber: number;
+}
+
 export interface StoredProfile {
   nickname: string;
   color: string;
@@ -59,6 +71,68 @@ export function calculateTotalRounds(
 ): number {
   if (settings.max_rounds) return settings.max_rounds;
   return playerCount * 3;
+}
+
+export function assignRoundOrder(
+  likesByPlayer: Map<string, RoundOrderCandidate[]>,
+  totalRounds: number,
+  random: () => number = Math.random
+): RoundAssignment[] {
+  const videoPool = new Map<string, RoundOrderCandidate[]>();
+
+  for (const [playerId, likes] of likesByPlayer) {
+    const shuffled = [...likes]
+      .sort(() => random() - 0.5)
+      .filter((like) => like.videoUrls.length > 0);
+
+    if (shuffled.length > 0) {
+      videoPool.set(playerId, shuffled);
+    }
+  }
+
+  const assignments: RoundAssignment[] = [];
+
+  for (let i = 0; i < totalRounds; i += 1) {
+    const candidates: Array<{ playerId: string; weight: number }> = [];
+
+    for (const [playerId, videos] of videoPool) {
+      if (videos.length > 0) {
+        candidates.push({ playerId, weight: videos.length });
+      }
+    }
+
+    if (candidates.length === 0) {
+      break;
+    }
+
+    const totalWeight = candidates.reduce((sum, candidate) => sum + candidate.weight, 0);
+    let threshold = random() * totalWeight;
+    let selectedPlayerId = candidates[0].playerId;
+
+    for (const candidate of candidates) {
+      threshold -= candidate.weight;
+      if (threshold <= 0) {
+        selectedPlayerId = candidate.playerId;
+        break;
+      }
+    }
+
+    const video = videoPool.get(selectedPlayerId)?.pop();
+    if (!video) {
+      continue;
+    }
+
+    assignments.push({
+      playerId: selectedPlayerId,
+      tiktokUrl: video.tiktokUrl,
+      videoUrl: video.videoUrl,
+      videoUrls: video.videoUrls,
+      tiktokVideoId: video.tiktokVideoId,
+      plannedRoundNumber: assignments.length + 1,
+    });
+  }
+
+  return assignments;
 }
 
 /**
