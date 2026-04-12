@@ -1,6 +1,6 @@
 {
   "app": {
-    "title": "the fuck you like?",
+    "title": "tf u like?",
     "description": "The TikTok party guessing game"
   },
   "home": {
@@ -67,7 +67,7 @@
     "syncError": "Sync failed. Open TikTok in desktop Chrome and try again.",
     "syncRetry": "Retry",
     "extensionRequired": "Desktop Chrome extension required to sync likes",
-    "extensionNotFound": "Install the tfyoulike desktop extension first",
+    "extensionNotFound": "Install the tf u like? desktop extension first",
     "syncIdle": "Not synced",
     "syncStatus": "Sync",
     "desktopSyncHint": "Sync works only on desktop Chrome with an open TikTok tab. Mobile PWA can join and play, but cannot sync likes."

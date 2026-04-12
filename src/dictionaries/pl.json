@@ -1,6 +1,6 @@
 {
   "app": {
-    "title": "co ty kurwa lajkujesz?",
+    "title": "tf u like?",
     "description": "Imprezowa gra z TikTokami"
   },
   "home": {
@@ -67,7 +67,7 @@
     "syncError": "Synchronizacja nie powiodła się. Otwórz TikToka w Chrome na komputerze i spróbuj ponownie.",
     "syncRetry": "Ponów",
     "extensionRequired": "Do synchronizacji lajków potrzebne jest rozszerzenie Chrome na komputerze",
-    "extensionNotFound": "Najpierw zainstaluj desktopowe rozszerzenie tfyoulike",
+    "extensionNotFound": "Najpierw zainstaluj desktopowe rozszerzenie tf u like?",
     "syncIdle": "Nie zsynchronizowano",
     "syncStatus": "Synchronizacja",
     "desktopSyncHint": "Synchronizacja działa tylko w Chrome na komputerze z otwartą kartą TikToka. Mobilna PWA pozwala dołączyć i grać, ale nie zsynchronizuje lajków."

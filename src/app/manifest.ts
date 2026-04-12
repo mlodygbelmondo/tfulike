@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "tfyoulike / the fuck you like?",
-    short_name: "tfyoulike",
+    name: "tf u like?",
+    short_name: "tf u like?",
     description: "The TikTok party guessing game",
     start_url: "/",
     display: "standalone",

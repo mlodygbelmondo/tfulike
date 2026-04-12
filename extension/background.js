@@ -5,7 +5,7 @@
 import { chooseTikTokTab } from "./tiktok-tab.js";
 
 function logDebug(step, details = {}) {
-  console.log("[tfyoulike-sync]", step, details);
+  console.log("[tfulike-sync]", step, details);
 }
 
 // Ensure declarativeNetRequest rules are active after install/update
@@ -738,7 +738,7 @@ async function scrapeTikTokLikesInPage(tiktokUsername) {
       );
       const likesData = likesResult.data;
 
-      console.log("[DEBUG][tfyoulike-sync]", "likes-page", {
+      console.log("[DEBUG][tfulike-sync]", "likes-page", {
         page,
         status: likesResult.status,
         signed: likesResult.signed,
@@ -762,7 +762,7 @@ async function scrapeTikTokLikesInPage(tiktokUsername) {
       cursor = likesData.cursor || cursor + 30;
     }
 
-    console.log("[DEBUG][tfyoulike-sync]", "likes-scrape-finished", {
+    console.log("[DEBUG][tfulike-sync]", "likes-scrape-finished", {
       username: tiktokUsername,
       secUidResolved: Boolean(secUid),
       totalLikes: likes.length,

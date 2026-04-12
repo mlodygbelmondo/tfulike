@@ -193,9 +193,9 @@ export function generateSessionToken(): string {
 /**
  * Session storage keys
  */
-export const SESSION_KEY = "tfyoulike_session";
-export const PROFILE_KEY = "tfyoulike_profile";
-export const TIKTOK_PROFILE_KEY = "tfyoulike_tiktok";
+export const PROFILE_KEY = "tfulike_profile";
+export const TIKTOK_PROFILE_KEY = "tfulike_tiktok";
+export const SESSION_KEY = "tfulike_session";
 
 export function getStoredSession(): {
   playerId: string;

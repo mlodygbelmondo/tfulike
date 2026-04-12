@@ -20,7 +20,7 @@ describe("ProfileSetup", () => {
     const user = userEvent.setup();
 
     localStorage.setItem(
-      "tfyoulike_session",
+      "tfulike_session",
       JSON.stringify({
         playerId: "player-1",
         sessionToken: "session-token",

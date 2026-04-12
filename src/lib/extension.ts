@@ -1,4 +1,4 @@
-// Extension bridge: communicates with the tfyoulike Chrome Extension via window.postMessage
+// Extension bridge: communicates with the tfulike Chrome extension via window.postMessage
 
 export interface ExtensionSyncRequest {
   player_id: string;
@@ -57,7 +57,7 @@ function createBlobUrlFromBase64(base64: string, contentType: string): string {
 }
 
 /**
- * Check if the tfyoulike Chrome Extension is installed.
+ * Check if the tfulike Chrome extension is installed.
  * Returns the extension version string, or null if not present.
  */
 export function checkExtensionPresent(): Promise<string | null> {

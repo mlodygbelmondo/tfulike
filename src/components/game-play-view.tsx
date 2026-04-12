@@ -13,7 +13,7 @@ import {
 import type { Player, Round, Video, RoomSettings } from "@/lib/types";
 import type { Dictionary } from "@/lib/dictionaries";
 
-const VIDEO_DEBUG_STORAGE_KEY = "tfyoulike_debug_video";
+const VIDEO_DEBUG_STORAGE_KEY = "tfulike_debug_video";
 
 function isVideoDebugEnabled(): boolean {
   if (typeof window === "undefined") return false;
@@ -59,7 +59,7 @@ function summarizeVideoUrlForDebug(rawUrl: string | null | undefined) {
 
 function logVideoDebug(step: string, details: Record<string, unknown>) {
   if (!isVideoDebugEnabled()) return;
-  console.debug("[DEBUG][tfyoulike-video]", step, details);
+  console.debug("[DEBUG][tfulike-video]", step, details);
 }
 
 /**
@@ -73,6 +73,10 @@ function extractVideoIdFromUrl(url: string | null | undefined): string | null {
 }
 
 type GamePhase = "loading" | "voting" | "reveal" | "finished";
+
+type VideoFitMode = "cover" | "contain";
+
+const VIDEO_COVER_ASPECT_TOLERANCE = 0.14;
 
 interface RevealData {
   correct_player_id: string;
@@ -109,6 +113,7 @@ export function GamePlayView({
   const [slotRevealing, setSlotRevealing] = useState(false);
   const [slotDone, setSlotDone] = useState(false);
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
+  const [videoFitMode, setVideoFitMode] = useState<VideoFitMode>("contain");
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [videoCandidates, setVideoCandidates] = useState<string[]>([]);
   const [videoCandidateIndex, setVideoCandidateIndex] = useState(0);
@@ -120,6 +125,7 @@ export function GamePlayView({
   const [nextRoundSubmitting, setNextRoundSubmitting] = useState(false);
   const revealTriggeredRef = useRef(false);
   const videoElementRef = useRef<HTMLVideoElement | null>(null);
+  const videoContainerRef = useRef<HTMLDivElement | null>(null);
   const videoLoadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const extensionPresentRef = useRef<boolean | null>(null);
   const videoRefreshAttemptedRef = useRef(false);
@@ -286,6 +292,7 @@ export function GamePlayView({
     setVideoRefreshAttempted(false);
     setVideoResolving(candidates.length > 0);
     videoRefreshAttemptedRef.current = false;
+    setVideoFitMode("contain");
     setSoundEnabled(true);
     setVideoSrc(null);
 
@@ -434,24 +441,69 @@ export function GamePlayView({
   }, [videoSrc, videoRefreshAttempted, videoRefreshing]);
 
   // Cancel timeout when video successfully plays
-  const handleCanPlay = useCallback(
+  const handlePlaying = useCallback(
     (event: React.SyntheticEvent<HTMLVideoElement>) => {
       if (videoLoadTimeoutRef.current) {
         clearTimeout(videoLoadTimeoutRef.current);
         videoLoadTimeoutRef.current = null;
       }
+
+      setVideoResolving(false);
+
+      const element = event.currentTarget;
+      logVideoDebug("video-playing", {
+        videoId: video?.id ?? null,
+        candidateIndex: videoCandidateIndex,
+        currentSrc: summarizeVideoUrlForDebug(element.currentSrc || videoSrc),
+        muted: element.muted,
+        networkState: element.networkState,
+        readyState: element.readyState,
+      });
+    },
+    [video?.id, videoCandidateIndex, videoSrc]
+  );
+
+  const handleCanPlay = useCallback(
+    (event: React.SyntheticEvent<HTMLVideoElement>) => {
       const element = event.currentTarget;
 
       element.muted = !soundEnabled;
 
-      void element.play().catch((error) => {
-        logVideoDebug("video-play-start-failed", {
-          videoId: video?.id ?? null,
-          error: String(error instanceof Error ? error.message : error),
-        });
-      });
+      void element
+        .play()
+        .then(() => {
+          setVideoResolving(false);
+        })
+        .catch(async (error) => {
+          logVideoDebug("video-play-start-failed", {
+            videoId: video?.id ?? null,
+            muted: element.muted,
+            error: String(error instanceof Error ? error.message : error),
+          });
 
-      setVideoResolving(false);
+          if (!soundEnabled) {
+            return;
+          }
+
+          element.muted = true;
+          setSoundEnabled(false);
+
+          try {
+            await element.play();
+            setVideoResolving(false);
+            logVideoDebug("video-play-start-muted-fallback", {
+              videoId: video?.id ?? null,
+              candidateIndex: videoCandidateIndex,
+            });
+          } catch (fallbackError) {
+            logVideoDebug("video-play-muted-fallback-failed", {
+              videoId: video?.id ?? null,
+              error: String(
+                fallbackError instanceof Error ? fallbackError.message : fallbackError
+              ),
+            });
+          }
+        });
 
       logVideoDebug("video-can-play", {
         videoId: video?.id ?? null,
@@ -780,73 +832,124 @@ export function GamePlayView({
       </div>
 
       {/* Video - MP4 playback */}
-      <div className="relative flex-1 overflow-hidden rounded-2xl bg-surface">
+      <div
+        ref={videoContainerRef}
+        className="relative flex-1 overflow-hidden rounded-2xl bg-surface"
+      >
         {videoSrc ? (
           <>
             <video
-              key={videoSrc}
-              ref={videoElementRef}
+              aria-hidden="true"
+              tabIndex={-1}
               src={videoSrc}
-              className="w-full h-full object-cover"
+              className="pointer-events-none absolute inset-0 block h-full w-full scale-110 object-cover blur-2xl"
               autoPlay
               loop
+              muted
               playsInline
-              muted={!soundEnabled}
               preload="metadata"
-              onLoadStart={(event) => {
-                const element = event.currentTarget;
-                logVideoDebug("video-load-start", {
-                  videoId: video?.id ?? null,
-                  candidateIndex: videoCandidateIndex,
-                  selected: summarizeVideoUrlForDebug(videoSrc),
-                  currentSrc: summarizeVideoUrlForDebug(element.currentSrc || videoSrc),
-                  networkState: element.networkState,
-                  readyState: element.readyState,
-                });
-              }}
-              onLoadedMetadata={(event) => {
-                const element = event.currentTarget;
-                logVideoDebug("video-loaded-metadata", {
-                  videoId: video?.id ?? null,
-                  candidateIndex: videoCandidateIndex,
-                  currentSrc: summarizeVideoUrlForDebug(element.currentSrc || videoSrc),
-                  duration: Number.isFinite(element.duration) ? element.duration : null,
-                  videoWidth: element.videoWidth,
-                  videoHeight: element.videoHeight,
-                  networkState: element.networkState,
-                  readyState: element.readyState,
-                });
-              }}
-              onCanPlay={handleCanPlay}
-              onError={(event) => {
-                const element = event.currentTarget;
-                logVideoDebug("video-error", {
-                  videoId: video?.id ?? null,
-                  candidateIndex: videoCandidateIndex,
-                  candidateCount: videoCandidates.length,
-                  currentSrc: summarizeVideoUrlForDebug(element.currentSrc || videoSrc),
-                  networkState: element.networkState,
-                  readyState: element.readyState,
-                  mediaErrorCode: element.error?.code ?? null,
-                  mediaErrorMessage: element.error?.message ?? null,
-                  willRetry: false,
-                  willAttemptRefresh: !videoRefreshAttempted,
-                });
-
-                if (!videoRefreshAttempted) {
-                  setVideoSrc(null);
-                  attemptExtensionRefresh();
-                  return;
-                }
-
-                setVideoLoadFailed(true);
-                setVideoSrc(null);
-              }}
             />
+            <div className="pointer-events-none absolute inset-0 bg-black/35" />
+            <div className="absolute inset-0 z-10 grid place-items-center">
+              <video
+                key={videoSrc}
+                ref={videoElementRef}
+                src={videoSrc}
+                className={
+                  videoFitMode === "cover"
+                    ? "block h-full w-full object-cover object-center"
+                    : "block max-h-full max-w-full object-contain object-center"
+                }
+                autoPlay
+                loop
+                playsInline
+                muted={!soundEnabled}
+                preload="metadata"
+                onLoadStart={(event) => {
+                  const element = event.currentTarget;
+                  logVideoDebug("video-load-start", {
+                    videoId: video?.id ?? null,
+                    candidateIndex: videoCandidateIndex,
+                    selected: summarizeVideoUrlForDebug(videoSrc),
+                    currentSrc: summarizeVideoUrlForDebug(element.currentSrc || videoSrc),
+                    networkState: element.networkState,
+                    readyState: element.readyState,
+                  });
+                }}
+                onLoadedMetadata={(event) => {
+                  const element = event.currentTarget;
+                  const container = videoContainerRef.current;
+                  const videoAspect =
+                    element.videoWidth > 0 && element.videoHeight > 0
+                      ? element.videoWidth / element.videoHeight
+                      : null;
+                  const containerAspect =
+                    container && container.clientWidth > 0 && container.clientHeight > 0
+                      ? container.clientWidth / container.clientHeight
+                      : null;
+
+                  let nextFitMode: VideoFitMode = "contain";
+                  if (
+                    videoAspect &&
+                    containerAspect &&
+                    Number.isFinite(videoAspect) &&
+                    Number.isFinite(containerAspect)
+                  ) {
+                    const delta = Math.abs(videoAspect - containerAspect) / containerAspect;
+                    nextFitMode =
+                      delta <= VIDEO_COVER_ASPECT_TOLERANCE ? "cover" : "contain";
+                  }
+
+                  setVideoFitMode(nextFitMode);
+
+                  logVideoDebug("video-loaded-metadata", {
+                    videoId: video?.id ?? null,
+                    candidateIndex: videoCandidateIndex,
+                    currentSrc: summarizeVideoUrlForDebug(element.currentSrc || videoSrc),
+                    duration: Number.isFinite(element.duration) ? element.duration : null,
+                    videoWidth: element.videoWidth,
+                    videoHeight: element.videoHeight,
+                    videoAspect,
+                    containerWidth: container?.clientWidth ?? null,
+                    containerHeight: container?.clientHeight ?? null,
+                    containerAspect,
+                    fitMode: nextFitMode,
+                    networkState: element.networkState,
+                    readyState: element.readyState,
+                  });
+                }}
+                onCanPlay={handleCanPlay}
+                onPlaying={handlePlaying}
+                onError={(event) => {
+                  const element = event.currentTarget;
+                  logVideoDebug("video-error", {
+                    videoId: video?.id ?? null,
+                    candidateIndex: videoCandidateIndex,
+                    candidateCount: videoCandidates.length,
+                    currentSrc: summarizeVideoUrlForDebug(element.currentSrc || videoSrc),
+                    networkState: element.networkState,
+                    readyState: element.readyState,
+                    mediaErrorCode: element.error?.code ?? null,
+                    mediaErrorMessage: element.error?.message ?? null,
+                    willRetry: false,
+                    willAttemptRefresh: !videoRefreshAttempted,
+                  });
+
+                  if (!videoRefreshAttempted) {
+                    setVideoSrc(null);
+                    attemptExtensionRefresh();
+                    return;
+                  }
+
+                  setVideoLoadFailed(true);
+                  setVideoSrc(null);
+                }}
+              />
+            </div>
             <button
               type="button"
               onClick={handleSoundToggle}
-              className="absolute right-3 top-3 rounded-full bg-black/70 px-3 py-1 text-xs font-medium text-white"
+              className="absolute right-3 top-3 z-20 rounded-full bg-black/70 px-3 py-1 text-xs font-medium text-white"
             >
               {soundEnabled ? "Tap to mute" : "Tap for sound"}
             </button>

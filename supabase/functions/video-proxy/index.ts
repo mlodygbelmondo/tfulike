@@ -3,7 +3,7 @@ declare const Deno: {
 };
 
 const ALLOWED_ORIGINS = new Set([
-  "https://tfyoulike.vercel.app",
+  "https://tfulike.vercel.app",
   "http://localhost:3000",
   "http://localhost:3001",
 ]);
@@ -13,7 +13,7 @@ function corsHeaders(origin: string | null): HeadersInit {
     "Access-Control-Allow-Origin":
       origin && ALLOWED_ORIGINS.has(origin)
         ? origin
-        : "https://tfyoulike.vercel.app",
+        : "https://tfulike.vercel.app",
     "Access-Control-Allow-Headers":
       "authorization, x-client-info, apikey, content-type",
     "Access-Control-Allow-Methods": "OPTIONS",

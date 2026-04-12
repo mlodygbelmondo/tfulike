@@ -1,6 +1,14 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { locales, defaultLocale, isValidLocale } from "@/lib/i18n";
 import { getDictionary } from "@/lib/dictionaries";
+
+vi.mock("next/font/google", () => ({
+  Geist: () => ({ variable: "--font-geist-sans" }),
+  Geist_Mono: () => ({ variable: "--font-geist-mono" }),
+}));
+
+import { metadata } from "@/app/layout";
+import manifest from "@/app/manifest";
 
 describe("i18n constants", () => {
   it("exports en and pl locales", () => {
@@ -36,7 +44,7 @@ describe("getDictionary", () => {
     expect(dict).toHaveProperty("create");
     expect(dict).toHaveProperty("join");
     expect(dict).toHaveProperty("lobby");
-    expect(dict.app.title).toBe("the fuck you like?");
+    expect(dict.app.title).toBe("tf u like?");
   });
 
   it("loads Polish dictionary with expected shape", async () => {
@@ -50,5 +58,29 @@ describe("getDictionary", () => {
     const en = await getDictionary("en");
     const pl = await getDictionary("pl");
     expect(Object.keys(en).sort()).toEqual(Object.keys(pl).sort());
+  });
+
+  it("loads English extension copy with the new brand", async () => {
+    const dict = await getDictionary("en");
+    expect(dict.lobby.extensionNotFound).toBe(
+      "Install the tf u like? desktop extension first"
+    );
+  });
+});
+
+describe("branding metadata", () => {
+  it("uses tf u like? user-facing metadata", () => {
+    expect(metadata.title).toBe("tf u like?");
+
+    const appleWebApp = metadata.appleWebApp;
+    expect(appleWebApp && typeof appleWebApp === "object" ? appleWebApp.title : undefined).toBe(
+      "tf u like?"
+    );
+  });
+
+  it("uses tfulike in the web manifest identifiers", () => {
+    const appManifest = manifest();
+    expect(appManifest.name).toBe("tf u like?");
+    expect(appManifest.short_name).toBe("tf u like?");
   });
 });

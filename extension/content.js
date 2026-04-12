@@ -1,5 +1,5 @@
 // extension/content.js
-// Content script injected on tfyoulike pages.
+// Content script injected on tfulike pages.
 // Listens for sync requests from the web app and relays them to the background service worker.
 
 (() => {

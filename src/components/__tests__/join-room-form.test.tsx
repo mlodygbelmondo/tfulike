@@ -14,7 +14,7 @@ vi.mock("next/navigation", () => ({
 
 function storeProfile() {
   localStorage.setItem(
-    "tfyoulike_profile",
+    "tfulike_profile",
     JSON.stringify({
       nickname: "Bob",
       color: "#34c759",

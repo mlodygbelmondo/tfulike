@@ -14,13 +14,13 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "tfyoulike / the fuck you like?",
+  title: "tf u like?",
   description: "The TikTok party guessing game",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "tfyoulike",
+    title: "tf u like?",
   },
 };
 

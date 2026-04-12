@@ -15,7 +15,7 @@ vi.mock("next/navigation", () => ({
 
 function storeProfile() {
   localStorage.setItem(
-    "tfyoulike_profile",
+    "tfulike_profile",
     JSON.stringify({
       nickname: "Alice",
       color: "#5856d6",
@@ -128,7 +128,7 @@ describe("CreateRoomForm", () => {
     });
 
     // Verify session was stored
-    const stored = JSON.parse(localStorage.getItem("tfyoulike_session") || "{}");
+    const stored = JSON.parse(localStorage.getItem("tfulike_session") || "{}");
     expect(stored.playerId).toBe("p1");
     expect(stored.roomPin).toBe("4567");
 

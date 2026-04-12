@@ -275,6 +275,10 @@ describe("session storage helpers", () => {
   });
 
   describe("storeSession", () => {
+    it("uses the tfulike session storage key", () => {
+      expect(SESSION_KEY).toBe("tfulike_session");
+    });
+
     it("stores session data in localStorage", () => {
       storeSession("p1", "tok123", "1234");
       const raw = localStorage.getItem(SESSION_KEY);
@@ -356,6 +360,10 @@ describe("stored profile helpers", () => {
 
   it("returns null when no profile is stored", () => {
     expect(getStoredProfile()).toBeNull();
+  });
+
+  it("uses the tfulike profile storage key", () => {
+    expect(PROFILE_KEY).toBe("tfulike_profile");
   });
 
   it("stores and retrieves nickname, color, and TikTok username", () => {

@@ -1,6 +1,6 @@
-// tfyoulike Service Worker — caches the app shell for offline/fast loading
+// tfulike Service Worker - caches the app shell for offline/fast loading
 
-const CACHE_NAME = "tfyoulike-v1";
+const CACHE_NAME = "tfulike-v1";
 
 const APP_SHELL = ["/", "/manifest.json"];
 

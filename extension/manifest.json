@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "tfyoulike TikTok Sync",
+  "name": "tf u like? TikTok Sync",
   "version": "0.1.0",
-  "description": "Syncs your TikTok liked videos for tfyoulike party game",
+  "description": "Syncs your TikTok liked videos for tf u like? party game",
 
   "permissions": [
     "tabs",
@@ -33,7 +33,7 @@
   "content_scripts": [
     {
       "matches": [
-        "https://tfyoulike.vercel.app/*",
+        "https://tfulike.vercel.app/*",
         "http://localhost:3000/*",
         "http://localhost:3001/*"
       ],

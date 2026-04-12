@@ -5,7 +5,7 @@ import type { Dictionary } from "@/lib/dictionaries";
  * Only the keys actually used by the components under test are included.
  */
 export const mockDict: Dictionary = {
-  app: { title: "the fuck you like?", description: "The TikTok party guessing game" },
+  app: { title: "tf u like?", description: "The TikTok party guessing game" },
   home: { subtitle: "Guess whose TikTok it is!", createRoom: "Create Room", joinRoom: "Join Room", or: "or", rejoinPrompt: "You have an active session in room {pin}", rejoin: "Rejoin", dismiss: "Dismiss", editProfile: "Edit profile" },
   profile: {
     title: "Set up your profile",
@@ -61,7 +61,7 @@ export const mockDict: Dictionary = {
     syncError: "Sync failed. Open TikTok in desktop Chrome and try again.",
     syncRetry: "Retry",
     extensionRequired: "Desktop Chrome extension required to sync likes",
-    extensionNotFound: "Install the tfyoulike desktop extension first",
+    extensionNotFound: "Install the tf u like? desktop extension first",
     syncIdle: "Not synced",
     syncStatus: "Sync",
     desktopSyncHint:
