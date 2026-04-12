@@ -1,0 +1,106 @@
+{
+  "app": {
+    "title": "co ty kurwa lajkujesz?",
+    "description": "Imprezowa gra z TikTokami"
+  },
+  "home": {
+    "subtitle": "Zgadnij czyj to TikTok!",
+    "createRoom": "Stwórz Pokój",
+    "joinRoom": "Dołącz do Pokoju",
+    "or": "lub",
+    "rejoinPrompt": "Masz aktywną sesję w pokoju {pin}",
+    "rejoin": "Dołącz ponownie",
+    "dismiss": "Odrzuć",
+    "editProfile": "Edytuj profil"
+  },
+  "profile": {
+    "title": "Ustaw swój profil",
+    "subtitle": "Wystarczy zrobić to raz.",
+    "nickname": "Twój Nick",
+    "nicknamePlaceholder": "Wpisz nick...",
+    "pickColor": "Wybierz Kolor",
+    "tiktok": "Twój Profil TikTok",
+    "tiktokPlaceholder": "@nazwa lub link do profilu",
+    "invalidTiktok": "Podaj poprawną nazwę @użytkownika lub link do profilu",
+    "save": "Gramy!",
+    "edit": "Edytuj profil",
+    "close": "Zamknij"
+  },
+  "create": {
+    "title": "Stwórz Pokój",
+    "nickname": "Twój Nick",
+    "nicknamePlaceholder": "Wpisz nick...",
+    "pickColor": "Wybierz Kolor",
+    "create": "Stwórz Pokój",
+    "creating": "Tworzenie..."
+  },
+  "join": {
+    "title": "Dołącz do Pokoju",
+    "pin": "PIN Pokoju",
+    "pinPlaceholder": "4-cyfrowy PIN",
+    "nickname": "Twój Nick",
+    "nicknamePlaceholder": "Wpisz nick...",
+    "pickColor": "Wybierz Kolor",
+    "join": "Dołącz",
+    "joining": "Dołączanie..."
+  },
+  "lobby": {
+    "title": "Pokój",
+    "pin": "PIN",
+    "players": "Gracze",
+    "waitingForPlayers": "Czekamy na graczy...",
+    "minPlayers": "Potrzeba minimum 2 graczy",
+    "startGame": "Rozpocznij Grę",
+    "hostControls": "Kontrolki Hosta",
+    "tiktokProfile": "Twój Profil TikTok",
+    "tiktokPlaceholder": "@nazwa lub link do profilu",
+    "invalidTiktok": "Podaj poprawną nazwę @użytkownika lub link do profilu",
+    "save": "Zapisz",
+    "roundCount": "Liczba Rund",
+    "addTiktokHint": "Dodaj swój profil TikTok, żeby grać",
+    "starting": "Uruchamianie...",
+    "profile": "Profil",
+    "editProfile": "Edytuj profil",
+    "syncLikes": "Synchronizuj lajki TikTok",
+    "syncing": "Synchronizacja...",
+    "synced": "Lajki zsynchronizowane!",
+    "syncError": "Synchronizacja nie powiodła się. Otwórz TikToka w Chrome na komputerze i spróbuj ponownie.",
+    "syncRetry": "Ponów",
+    "extensionRequired": "Do synchronizacji lajków potrzebne jest rozszerzenie Chrome na komputerze",
+    "extensionNotFound": "Najpierw zainstaluj desktopowe rozszerzenie tfyoulike",
+    "syncIdle": "Nie zsynchronizowano",
+    "syncStatus": "Synchronizacja",
+    "desktopSyncHint": "Synchronizacja działa tylko w Chrome na komputerze z otwartą kartą TikToka. Mobilna PWA pozwala dołączyć i grać, ale nie zsynchronizuje lajków."
+  },
+  "game": {
+    "round": "Runda",
+    "of": "z",
+    "whoseTiktok": "Czyj to TikTok?",
+    "voted": "Głos oddany!",
+    "waiting": "Czekamy na głosy...",
+    "reveal": "Odpowiedź to...",
+    "correct": "Dobrze!",
+    "wrong": "Źle!",
+    "nobodyGuessed": "Nikt nie zgadł!",
+    "stumpBonus": "+5 bonus za zmylenie!",
+    "points": "pkt",
+    "nextRound": "Następna Runda",
+    "viewScores": "Zobacz Wyniki",
+    "everyoneVoted": "Wszyscy zagłosowali!",
+    "revealAnswer": "Pokaż Odpowiedź",
+    "skipToReveal": "Przejdź do Odpowiedzi"
+  },
+  "scores": {
+    "title": "Tabela Wyników",
+    "player": "Gracz",
+    "score": "Wynik",
+    "continue": "Kontynuuj"
+  },
+  "results": {
+    "title": "Koniec Gry!",
+    "winner": "Zwycięzca",
+    "playAgain": "Zagraj Ponownie",
+    "newGame": "Nowa Gra",
+    "rank": "Miejsce"
+  }
+}

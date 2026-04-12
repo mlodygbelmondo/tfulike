@@ -1,0 +1,106 @@
+{
+  "app": {
+    "title": "the fuck you like?",
+    "description": "The TikTok party guessing game"
+  },
+  "home": {
+    "subtitle": "Guess whose TikTok it is!",
+    "createRoom": "Create Room",
+    "joinRoom": "Join Room",
+    "or": "or",
+    "rejoinPrompt": "You have an active session in room {pin}",
+    "rejoin": "Rejoin",
+    "dismiss": "Dismiss",
+    "editProfile": "Edit profile"
+  },
+  "profile": {
+    "title": "Set up your profile",
+    "subtitle": "You only need to do this once.",
+    "nickname": "Your Nickname",
+    "nicknamePlaceholder": "Enter nickname...",
+    "pickColor": "Pick Your Color",
+    "tiktok": "Your TikTok Profile",
+    "tiktokPlaceholder": "@username or profile link",
+    "invalidTiktok": "Enter a valid TikTok @username or profile link",
+    "save": "Let's play!",
+    "edit": "Edit profile",
+    "close": "Close"
+  },
+  "create": {
+    "title": "Create a Room",
+    "nickname": "Your Nickname",
+    "nicknamePlaceholder": "Enter nickname...",
+    "pickColor": "Pick Your Color",
+    "create": "Create Room",
+    "creating": "Creating..."
+  },
+  "join": {
+    "title": "Join a Room",
+    "pin": "Room PIN",
+    "pinPlaceholder": "4-digit PIN",
+    "nickname": "Your Nickname",
+    "nicknamePlaceholder": "Enter nickname...",
+    "pickColor": "Pick Your Color",
+    "join": "Join Room",
+    "joining": "Joining..."
+  },
+  "lobby": {
+    "title": "Room",
+    "pin": "PIN",
+    "players": "Players",
+    "waitingForPlayers": "Waiting for players...",
+    "minPlayers": "Need at least 2 players to start",
+    "startGame": "Start Game",
+    "hostControls": "Host Controls",
+    "tiktokProfile": "Your TikTok Profile",
+    "tiktokPlaceholder": "@username or profile link",
+    "invalidTiktok": "Enter a valid TikTok @username or profile link",
+    "save": "Save",
+    "roundCount": "Number of Rounds",
+    "addTiktokHint": "Add your TikTok profile to play",
+    "starting": "Starting...",
+    "profile": "Profile",
+    "editProfile": "Edit profile",
+    "syncLikes": "Sync TikTok Likes",
+    "syncing": "Syncing...",
+    "synced": "Likes synced!",
+    "syncError": "Sync failed. Open TikTok in desktop Chrome and try again.",
+    "syncRetry": "Retry",
+    "extensionRequired": "Desktop Chrome extension required to sync likes",
+    "extensionNotFound": "Install the tfyoulike desktop extension first",
+    "syncIdle": "Not synced",
+    "syncStatus": "Sync",
+    "desktopSyncHint": "Sync works only on desktop Chrome with an open TikTok tab. Mobile PWA can join and play, but cannot sync likes."
+  },
+  "game": {
+    "round": "Round",
+    "of": "of",
+    "whoseTiktok": "Whose TikTok is this?",
+    "voted": "Vote locked!",
+    "waiting": "Waiting for votes...",
+    "reveal": "The answer is...",
+    "correct": "Correct!",
+    "wrong": "Wrong!",
+    "nobodyGuessed": "Nobody guessed it!",
+    "stumpBonus": "+5 stump bonus!",
+    "points": "pts",
+    "nextRound": "Next Round",
+    "viewScores": "View Scores",
+    "everyoneVoted": "Everyone voted!",
+    "revealAnswer": "Reveal Answer",
+    "skipToReveal": "Skip to Reveal"
+  },
+  "scores": {
+    "title": "Scoreboard",
+    "player": "Player",
+    "score": "Score",
+    "continue": "Continue"
+  },
+  "results": {
+    "title": "Game Over!",
+    "winner": "Winner",
+    "playAgain": "Play Again",
+    "newGame": "New Game",
+    "rank": "Rank"
+  }
+}

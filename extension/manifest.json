@@ -1,0 +1,50 @@
+{
+  "manifest_version": 3,
+  "name": "tfyoulike TikTok Sync",
+  "version": "0.1.0",
+  "description": "Syncs your TikTok liked videos for tfyoulike party game",
+
+  "permissions": [
+    "tabs",
+    "scripting",
+    "declarativeNetRequest",
+    "declarativeNetRequestWithHostAccess",
+    "cookies",
+    "storage"
+  ],
+
+  "host_permissions": ["*://*/*"],
+
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "tiktok_headers",
+        "enabled": true,
+        "path": "rules.json"
+      }
+    ]
+  },
+
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+
+  "content_scripts": [
+    {
+      "matches": [
+        "https://tfyoulike.vercel.app/*",
+        "http://localhost:3000/*",
+        "http://localhost:3001/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

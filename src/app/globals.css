@@ -1,26 +1,154 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #000000;
+  --foreground: #ffffff;
+  --accent: #ff2d55;
+  --accent-secondary: #5856d6;
+  --surface: #1c1c1e;
+  --surface-2: #2c2c2e;
+  --muted: #8e8e93;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-accent: var(--accent);
+  --color-accent-secondary: var(--accent-secondary);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-muted: var(--muted);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --animate-fade-in: fade-in 0.3s ease-out both;
+  --animate-slide-up: slide-up 0.3s ease-out both;
+  --animate-scale-in: scale-in 0.3s ease-out both;
+  --animate-bounce-in: bounce-in 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  --animate-slot-spin: slot-spin 2s cubic-bezier(0.2, 0, 0.2, 1) both;
+  --animate-slot-settle: slot-settle 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  --animate-glow-pulse: glow-pulse 1.5s ease-in-out infinite;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans, system-ui, -apple-system, sans-serif);
+  -webkit-tap-highlight-color: transparent;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Large touch targets */
+button,
+a,
+[role="button"] {
+  min-height: 40px;
+}
+
+/* Smooth scroll */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Animations */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes bounce-in {
+  from {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  60% {
+    transform: scale(1.1);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Slot-machine / roulette reveal animations */
+@keyframes slot-spin {
+  0% {
+    transform: translateY(0);
+  }
+  15% {
+    transform: translateY(-400%);
+  }
+  85% {
+    transform: translateY(-400%);
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+
+@keyframes slot-settle {
+  0% {
+    transform: scale(0.8) translateY(-8px);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.15) translateY(2px);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes glow-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 8px rgba(255, 45, 85, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 24px rgba(255, 45, 85, 0.7);
+  }
+}
+
+/* Slot machine container */
+.slot-container {
+  overflow: hidden;
+  position: relative;
+}
+
+.slot-strip {
+  display: flex;
+  flex-direction: column;
+  animation: slot-spin 2s cubic-bezier(0.2, 0, 0.2, 1) forwards;
+}
+
+.slot-winner {
+  animation: slot-settle 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation-delay: 2s;
 }
