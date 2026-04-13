@@ -4,6 +4,7 @@ import { isValidLocale } from "@/lib/i18n";
 import { notFound } from "next/navigation";
 import { redirect } from "next/navigation";
 import { getUser, getProfile } from "@/lib/auth";
+import { exchangeCodeForSession } from "@/lib/supabase/oauth";
 import { RejoinBanner } from "@/components/rejoin-banner";
 import { GoogleSignInButton } from "@/components/google-sign-in";
 import { UserMenu } from "@/components/user-menu";
@@ -13,11 +14,26 @@ export default async function HomePage({
   searchParams,
 }: {
   params: Promise<{ lang: string }>;
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; code?: string }>;
 }) {
   const { lang } = await params;
   const query = await searchParams;
   if (!isValidLocale(lang)) notFound();
+
+  if (query.code) {
+    const { error, onboardingCompleted } = await exchangeCodeForSession(query.code);
+
+    if (error) {
+      redirect(`/${lang}?error=auth`);
+    }
+
+    if (!onboardingCompleted) {
+      redirect(`/${lang}/onboarding`);
+    }
+
+    redirect(`/${lang}`);
+  }
+
   const dict = await getDictionary(lang);
 
   const user = await getUser();

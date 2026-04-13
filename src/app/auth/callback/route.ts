@@ -1,7 +1,6 @@
-import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { defaultLocale } from "@/lib/i18n";
+import { exchangeCodeForSession } from "@/lib/supabase/oauth";
 
 /**
  * GET /auth/callback
@@ -17,43 +16,11 @@ export async function GET(request: Request) {
   const lang = defaultLocale; // TODO: persist pre-login locale in cookie
 
   if (code) {
-    const cookieStore = await cookies();
-
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() {
-            return cookieStore.getAll();
-          },
-          setAll(cookiesToSet) {
-            cookiesToSet.forEach(({ name, value, options }) => {
-              cookieStore.set(name, value, options);
-            });
-          },
-        },
-      }
-    );
-
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    const { error, onboardingCompleted } = await exchangeCodeForSession(code);
 
     if (!error) {
-      // Check if the user has completed onboarding
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (user) {
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("onboarding_completed")
-          .eq("id", user.id)
-          .single();
-
-        if (!profile?.onboarding_completed) {
-          return NextResponse.redirect(`${origin}/${lang}/onboarding`);
-        }
+      if (!onboardingCompleted) {
+        return NextResponse.redirect(`${origin}/${lang}/onboarding`);
       }
 
       return NextResponse.redirect(`${origin}/${lang}`);
