@@ -33,6 +33,13 @@ function getPathnameLocale(pathname: string): Locale | null {
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  if (pathname === "/solo") {
+    const locale = getPreferredLocale(request);
+    const url = request.nextUrl.clone();
+    url.pathname = `/${locale}/solo`;
+    return NextResponse.redirect(url);
+  }
+
   const isLocalizedManifest = locales.some(
     (locale) => pathname === `/${locale}/manifest.webmanifest`
   );

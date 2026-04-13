@@ -94,6 +94,13 @@ export interface Round {
   ended_at: string | null;
 }
 
+export interface RoundSkip {
+  id: string;
+  round_id: string;
+  player_id: string;
+  created_at: string;
+}
+
 export interface Vote {
   id: string;
   round_id: string;

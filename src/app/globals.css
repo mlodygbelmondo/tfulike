@@ -44,6 +44,16 @@ a,
   min-height: 40px;
 }
 
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]) {
+  cursor: pointer;
+}
+
+button:disabled,
+[role="button"][aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
 /* Smooth scroll */
 html {
   scroll-behavior: smooth;
