@@ -1,15 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { POST } from "@/app/api/rooms/route";
-import { createRoutableMock } from "@/__tests__/helpers/supabase-mock";
-
 // Mock the supabase server client
 vi.mock("@/lib/supabase/server", () => ({
   createClient: vi.fn(),
 }));
 
-import { createClient } from "@/lib/supabase/server";
+vi.mock("@/lib/supabase/admin", () => ({
+  createAdminClient: vi.fn(),
+}));
 
-function makeRequest(body: unknown) {
+import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+
+const TEST_USER_ID = "auth-user-1";
+
+function makeRequest(body: unknown = {}) {
   return new Request("http://localhost/api/rooms", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -17,62 +22,133 @@ function makeRequest(body: unknown) {
   });
 }
 
+function makeChain(resolveValue: { data: unknown; error: unknown }) {
+  const chain: Record<string, unknown> = {};
+  const proxy: unknown = new Proxy(chain, {
+    get(target, prop) {
+      if (prop === "then") return (resolve: (v: unknown) => void) => resolve(resolveValue);
+      if (prop in target) return target[prop as keyof typeof target];
+      const fn = vi.fn(() => proxy);
+      target[prop as string] = fn;
+      return fn;
+    },
+  });
+  return proxy;
+}
+
+function makeAuthMock(user: { id: string } | null) {
+  return {
+    getUser: vi.fn().mockResolvedValue({ data: { user } }),
+  };
+}
+
 describe("POST /api/rooms", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("returns 400 when nickname is missing", async () => {
-    const res = await POST(
-      makeRequest({ color: "#ff2d55", tiktok_username: "cooluser" })
-    );
-    expect(res.status).toBe(400);
-    const json = await res.json();
-    expect(json.error).toMatch(/nickname/i);
-  });
-
-  it("returns 400 when color is missing", async () => {
-    const res = await POST(
-      makeRequest({ nickname: "Alice", tiktok_username: "cooluser" })
-    );
-    expect(res.status).toBe(400);
-    const json = await res.json();
-    expect(json.error).toMatch(/color/i);
-  });
-
-  it("accepts tiktok_username when creating the host player", async () => {
-    const room = { id: "room-1", pin: "1234", status: "lobby", host_player_id: null };
-    const player = {
-      id: "player-1",
-      nickname: "Alice",
-      color: "#ff2d55",
-      session_token: "tok",
-      tiktok_username: "cooluser",
+  it("returns 401 when user is not authenticated", async () => {
+    const sb = {
+      auth: makeAuthMock(null),
+      from: vi.fn(() => makeChain({ data: null, error: null })),
+      rpc: vi.fn(() => makeChain({ data: null, error: null })),
     };
+    vi.mocked(createClient).mockResolvedValue(sb as never);
+    vi.mocked(createAdminClient).mockReturnValue({ from: vi.fn(() => makeChain({ data: null, error: null })) } as never);
+
+    const res = await POST(makeRequest());
+    expect(res.status).toBe(401);
+    const json = await res.json();
+    expect(json.error).toMatch(/unauthorized/i);
+  });
+
+  it("returns 400 when profile not found", async () => {
+    const sb = {
+      auth: makeAuthMock({ id: TEST_USER_ID }),
+      from: vi.fn(() => makeChain({ data: null, error: null })),
+      rpc: vi.fn(() => makeChain({ data: null, error: null })),
+    };
+    vi.mocked(createClient).mockResolvedValue(sb as never);
+    vi.mocked(createAdminClient).mockReturnValue({ from: vi.fn(() => makeChain({ data: null, error: null })) } as never);
+
+    const res = await POST(makeRequest());
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toMatch(/profile/i);
+  });
+
+  it("returns 500 when PIN generation fails", async () => {
+    let fromCallCount = 0;
+    const sb = {
+      auth: makeAuthMock({ id: TEST_USER_ID }),
+      from: vi.fn(() => {
+        const results = [
+          // profiles query
+          { data: { nickname: "Alice", color: "#ff2d55", tiktok_username: "cooluser", onboarding_completed: true }, error: null },
+        ];
+        const result = results[fromCallCount] || { data: null, error: null };
+        fromCallCount++;
+        return makeChain(result);
+      }),
+      rpc: vi.fn(() => makeChain({ data: null, error: { message: "rpc error" } })),
+    };
+    vi.mocked(createClient).mockResolvedValue(sb as never);
+    vi.mocked(createAdminClient).mockReturnValue({ from: vi.fn(() => makeChain({ data: null, error: null })) } as never);
+
+    const res = await POST(makeRequest());
+    expect(res.status).toBe(500);
+    const json = await res.json();
+    expect(json.error).toMatch(/pin/i);
+  });
+
+  it("returns 500 when room insert fails", async () => {
+    let fromCallCount = 0;
+    const sb = {
+      auth: makeAuthMock({ id: TEST_USER_ID }),
+      from: vi.fn(() => {
+        const results = [
+          // profiles query
+          { data: { nickname: "Alice", color: "#ff2d55", tiktok_username: "cooluser", onboarding_completed: true }, error: null },
+        ];
+        const result = results[fromCallCount] || { data: null, error: null };
+        fromCallCount++;
+        return makeChain(result);
+      }),
+      rpc: vi.fn(() => makeChain({ data: "1234", error: null })),
+    };
+    vi.mocked(createClient).mockResolvedValue(sb as never);
+    vi.mocked(createAdminClient).mockReturnValue({ from: vi.fn(() => makeChain({ data: null, error: { message: "insert error" } })) } as never);
+
+    const res = await POST(makeRequest());
+    expect(res.status).toBe(500);
+    const json = await res.json();
+    expect(json.error).toMatch(/room/i);
+  });
+
+  it("creates room and player on success using auth profile", async () => {
+    const room = { id: "room-1", pin: "1234", status: "lobby", host_player_id: null };
+    const player = { id: "player-1", nickname: "Alice", color: "#ff2d55" };
 
     let fromCallCount = 0;
     const results = [
-      { data: room, error: null },
-      { data: player, error: null },
-      { data: null, error: null },
+      // profiles query
+      {
+        data: {
+          nickname: "Alice",
+          color: "#ff2d55",
+          tiktok_username: "cooluser",
+          sync_status: "synced",
+          synced_at: "2025-01-01T00:00:00.000Z",
+          onboarding_completed: true,
+        },
+        error: null,
+      },
     ];
 
-    function makeChain(resolveValue: { data: unknown; error: unknown }) {
-      const chain: Record<string, unknown> = {};
-      const proxy: unknown = new Proxy(chain, {
-        get(target, prop) {
-          if (prop === "then") return (resolve: (v: unknown) => void) => resolve(resolveValue);
-          if (prop in target) return target[prop as keyof typeof target];
-          const fn = vi.fn(() => proxy);
-          target[prop as string] = fn;
-          return fn;
-        },
-      });
-      return proxy;
-    }
-
     const insertSpy = vi.fn();
+    let adminIdx = 0;
     const sb = {
+      auth: makeAuthMock({ id: TEST_USER_ID }),
       rpc: vi.fn(() => makeChain({ data: "1234", error: null })),
       from: vi.fn((table: string) => {
         const result = results[fromCallCount] || { data: null, error: null };
@@ -84,126 +160,43 @@ describe("POST /api/rooms", () => {
         return chain;
       }),
     };
-
-    vi.mocked(createClient).mockResolvedValue(sb as never);
-
-    const res = await POST(
-      makeRequest({
-        nickname: "Alice",
-        color: "#ff2d55",
-        tiktok_username: "cooluser",
-      })
-    );
-
-    expect(res.status).toBe(200);
-    expect(insertSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        nickname: "Alice",
-        color: "#ff2d55",
-        is_host: true,
-        tiktok_username: "cooluser",
-      })
-    );
-  });
-
-  it("returns 400 when nickname is only whitespace", async () => {
-    const res = await POST(
-      makeRequest({
-        nickname: "   ",
-        color: "#ff2d55",
-        tiktok_username: "cooluser",
-      })
-    );
-    expect(res.status).toBe(400);
-  });
-
-  it("returns 500 when PIN generation fails", async () => {
-    const sb = createRoutableMock({});
-    sb._setRpc({ data: null, error: { message: "rpc error" } });
-    vi.mocked(createClient).mockResolvedValue(sb as never);
-
-    const res = await POST(
-      makeRequest({
-        nickname: "Alice",
-        color: "#ff2d55",
-        tiktok_username: "cooluser",
-      })
-    );
-    expect(res.status).toBe(500);
-    const json = await res.json();
-    expect(json.error).toMatch(/pin/i);
-  });
-
-  it("returns 500 when room insert fails", async () => {
-    const sb = createRoutableMock({
-      rooms: { data: null, error: { message: "insert error" } },
-    });
-    sb._setRpc({ data: "1234", error: null });
-    vi.mocked(createClient).mockResolvedValue(sb as never);
-
-    const res = await POST(
-      makeRequest({
-        nickname: "Alice",
-        color: "#ff2d55",
-        tiktok_username: "cooluser",
-      })
-    );
-    expect(res.status).toBe(500);
-    const json = await res.json();
-    expect(json.error).toMatch(/room/i);
-  });
-
-  it("creates room and player on success", async () => {
-    const room = { id: "room-1", pin: "1234", status: "lobby", host_player_id: null };
-    const player = { id: "player-1", nickname: "Alice", color: "#ff2d55", session_token: "tok" };
-
-    // We need a more fine-grained mock for this success path since .from()
-    // is called for rooms (insert then update) and players (insert)
-    let fromCallCount = 0;
-    const results = [
-      // rooms insert → select → single
+    const adminResults = [
       { data: room, error: null },
-      // players insert → select → single
       { data: player, error: null },
-      // rooms update (set host_player_id)
       { data: null, error: null },
     ];
-
-    function makeChain(resolveValue: { data: unknown; error: unknown }) {
-      const chain: Record<string, unknown> = {};
-      const proxy: unknown = new Proxy(chain, {
-        get(target, prop) {
-          if (prop === "then") return (resolve: (v: unknown) => void) => resolve(resolveValue);
-          if (prop in target) return target[prop as keyof typeof target];
-          const fn = vi.fn(() => proxy);
-          target[prop as string] = fn;
-          return fn;
-        },
-      });
-      return proxy;
-    }
-
-    const sb = {
-      rpc: vi.fn(() => makeChain({ data: "1234", error: null })),
-      from: vi.fn(() => {
-        const result = results[fromCallCount] || { data: null, error: null };
-        fromCallCount++;
-        return makeChain(result);
+    const adminSb = {
+      from: vi.fn((table: string) => {
+        const result = adminResults[adminIdx] || { data: null, error: null };
+        adminIdx += 1;
+        const chain = makeChain(result) as Record<string, ReturnType<typeof vi.fn>>;
+        if (table === "players") {
+          chain.insert = insertSpy.mockReturnValue(chain);
+        }
+        return chain;
       }),
     };
 
     vi.mocked(createClient).mockResolvedValue(sb as never);
+    vi.mocked(createAdminClient).mockReturnValue(adminSb as never);
 
-    const res = await POST(
-      makeRequest({
-        nickname: "Alice",
-        color: "#ff2d55",
-        tiktok_username: "cooluser",
-      })
-    );
+    const res = await POST(makeRequest());
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.room.pin).toBe("1234");
     expect(json.player.nickname).toBe("Alice");
+
+    // Player insert should include user_id and profile data
+    expect(insertSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user_id: TEST_USER_ID,
+        nickname: "Alice",
+        color: "#ff2d55",
+        is_host: true,
+        tiktok_username: "cooluser",
+        sync_status: "synced",
+        synced_at: "2025-01-01T00:00:00.000Z",
+      })
+    );
   });
 });

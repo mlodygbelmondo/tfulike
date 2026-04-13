@@ -4,17 +4,10 @@ import {
   calculateTotalRounds,
   calculateRoundScores,
   assignRoundOrder,
-  generateSessionToken,
   SESSION_KEY,
-  PROFILE_KEY,
   getStoredSession,
   storeSession,
   clearSession,
-  getStoredProfile,
-  storeProfile,
-  clearProfile,
-  getStoredTikTokProfile,
-  storeTikTokProfile,
 } from "@/lib/game";
 import type { RoomSettings } from "@/lib/types";
 
@@ -246,23 +239,6 @@ describe("assignRoundOrder", () => {
   });
 });
 
-// ─── generateSessionToken ───────────────────────────────────────────
-
-describe("generateSessionToken", () => {
-  it("returns a valid UUID-like string", () => {
-    const token = generateSessionToken();
-    expect(token).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
-    );
-  });
-
-  it("generates unique tokens on each call", () => {
-    const t1 = generateSessionToken();
-    const t2 = generateSessionToken();
-    expect(t1).not.toBe(t2);
-  });
-});
-
 // ─── Session storage helpers ────────────────────────────────────────
 
 describe("session storage helpers", () => {
@@ -280,12 +256,11 @@ describe("session storage helpers", () => {
     });
 
     it("stores session data in localStorage", () => {
-      storeSession("p1", "tok123", "1234");
+      storeSession("p1", "1234");
       const raw = localStorage.getItem(SESSION_KEY);
       expect(raw).not.toBeNull();
       expect(JSON.parse(raw!)).toEqual({
         playerId: "p1",
-        sessionToken: "tok123",
         roomPin: "1234",
       });
     });
@@ -297,10 +272,9 @@ describe("session storage helpers", () => {
     });
 
     it("returns parsed session when present", () => {
-      storeSession("p2", "tok456", "5678");
+      storeSession("p2", "5678");
       expect(getStoredSession()).toEqual({
         playerId: "p2",
-        sessionToken: "tok456",
         roomPin: "5678",
       });
     });
@@ -313,93 +287,9 @@ describe("session storage helpers", () => {
 
   describe("clearSession", () => {
     it("removes session from localStorage", () => {
-      storeSession("p3", "tok789", "9999");
+      storeSession("p3", "9999");
       clearSession();
       expect(getStoredSession()).toBeNull();
     });
-  });
-});
-
-// ─── TikTok profile storage ────────────────────────────────────────
-
-describe("TikTok profile storage", () => {
-  beforeEach(() => {
-    localStorage.clear();
-  });
-
-  afterEach(() => {
-    localStorage.clear();
-  });
-
-  it("returns null when nothing stored", () => {
-    expect(getStoredTikTokProfile()).toBeNull();
-  });
-
-  it("stores and retrieves profile", () => {
-    storeTikTokProfile("cooluser");
-    expect(getStoredTikTokProfile()).toBe("cooluser");
-  });
-
-  it("overwrites previous profile", () => {
-    storeTikTokProfile("old");
-    storeTikTokProfile("new");
-    expect(getStoredTikTokProfile()).toBe("new");
-  });
-});
-
-// ─── Stored profile helpers ─────────────────────────────────────────
-
-describe("stored profile helpers", () => {
-  beforeEach(() => {
-    localStorage.clear();
-  });
-
-  afterEach(() => {
-    localStorage.clear();
-  });
-
-  it("returns null when no profile is stored", () => {
-    expect(getStoredProfile()).toBeNull();
-  });
-
-  it("uses the tfulike profile storage key", () => {
-    expect(PROFILE_KEY).toBe("tfulike_profile");
-  });
-
-  it("stores and retrieves nickname, color, and TikTok username", () => {
-    storeProfile({
-      nickname: "Alice",
-      color: "#ff2d55",
-      tiktok: "cooluser",
-    });
-
-    expect(getStoredProfile()).toEqual({
-      nickname: "Alice",
-      color: "#ff2d55",
-      tiktok: "cooluser",
-    });
-
-    expect(JSON.parse(localStorage.getItem(PROFILE_KEY) || "{}")).toEqual({
-      nickname: "Alice",
-      color: "#ff2d55",
-      tiktok: "cooluser",
-    });
-  });
-
-  it("returns null for corrupt stored profile data", () => {
-    localStorage.setItem(PROFILE_KEY, "not-json");
-    expect(getStoredProfile()).toBeNull();
-  });
-
-  it("clears the stored profile", () => {
-    storeProfile({
-      nickname: "Alice",
-      color: "#ff2d55",
-      tiktok: "cooluser",
-    });
-
-    clearProfile();
-
-    expect(getStoredProfile()).toBeNull();
   });
 });

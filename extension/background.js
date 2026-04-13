@@ -162,19 +162,12 @@ async function handleFetchVideoData(payload) {
   };
 }
 
-async function handleSyncLikes(payload) {
-  const { player_id, room_id, tiktok_username, sync_function_url } = payload;
-
-  if (!player_id || !room_id || !sync_function_url) {
-    return { ok: false, error: "Missing required fields in sync request" };
-  }
-
+async function handleSyncLikes() {
   try {
-    const likes = await fetchTikTokLikes(tiktok_username);
+    const { username, likes } = await fetchTikTokLikes();
 
     logDebug("sync-likes-ready", {
-      roomId: room_id,
-      playerId: player_id,
+      username,
       likeCount: likes.length,
       preview: likes.slice(0, 3).map((like) => summarizeLikeForDebug(like)),
     });
@@ -183,39 +176,15 @@ async function handleSyncLikes(payload) {
       return {
         ok: false,
         error:
-          "No liked videos found in your open TikTok tab. Make sure TikTok is open on desktop Chrome, you are logged in, and the account matches your profile.",
+          "No liked videos found in your open TikTok tab. Make sure TikTok is open on desktop Chrome and you are logged in.",
       };
     }
 
-    const response = await fetch(sync_function_url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        player_id,
-        room_id,
-        likes,
-      }),
-    });
-
-    if (!response.ok) {
-      const errBody = await response.json().catch(() => ({}));
-      logDebug("sync-function-error", {
-        status: response.status,
-        error: errBody.error || null,
-      });
-      return {
-        ok: false,
-        error: errBody.error || `Edge function returned ${response.status}`,
-      };
-    }
-
-    const result = await response.json().catch(() => ({ synced_count: likes.length }));
-    logDebug("sync-function-success", {
-      syncedCount: result.synced_count ?? likes.length,
-    });
-    return { ok: true, synced_count: result.synced_count ?? likes.length };
+    return {
+      ok: true,
+      tiktok_username: username,
+      likes,
+    };
   } catch (err) {
     logDebug("sync-likes-failed", {
       error: String(err.message || err),
@@ -375,8 +344,8 @@ async function refreshSingleVideoInPage(videoId) {
   }
 }
 
-async function fetchTikTokLikes(tiktokUsername) {
-  logDebug("fetch-start", { tiktokUsername });
+async function fetchTikTokLikes() {
+  logDebug("fetch-start", {});
 
   const tab = await getTikTokTab();
   if (!tab?.id) {
@@ -391,7 +360,7 @@ async function fetchTikTokLikes(tiktokUsername) {
     target: { tabId: tab.id },
     world: "MAIN",
     func: scrapeTikTokLikesInPage,
-    args: [tiktokUsername],
+    args: [],
   });
 
   const payload = results?.[0]?.result;
@@ -409,7 +378,10 @@ async function fetchTikTokLikes(tiktokUsername) {
     throw new Error(payload.error || "TikTok sync failed inside the TikTok tab.");
   }
 
-  return payload.likes || [];
+  return {
+    username: payload.username,
+    likes: payload.likes || [],
+  };
 }
 
 async function getTikTokTab() {
@@ -419,7 +391,7 @@ async function getTikTokTab() {
   return chooseTikTokTab(tabs);
 }
 
-async function scrapeTikTokLikesInPage(tiktokUsername) {
+async function scrapeTikTokLikesInPage() {
   function appendSignedUrl(url, signature) {
     if (!signature) {
       return url;
@@ -488,14 +460,6 @@ async function scrapeTikTokLikesInPage(tiktokUsername) {
     return url.toString();
   }
 
-  function buildUserDetailUrl(username, msToken) {
-    return buildTikTokUrl("/api/user/detail/", {
-      uniqueId: username,
-      secUid: "",
-      msToken,
-    });
-  }
-
   function buildLikedVideosUrl({ secUid, cursor, msToken }) {
     return buildTikTokUrl("/api/favorite/item_list/", {
       aid: 1988,
@@ -547,10 +511,6 @@ async function scrapeTikTokLikesInPage(tiktokUsername) {
     }
   }
 
-  function extractSecUid(data) {
-    return data?.userInfo?.user?.secUid || data?.secUid || null;
-  }
-
   function extractSecUidFromHtml(html) {
     if (typeof html !== "string" || !html) {
       return null;
@@ -572,9 +532,29 @@ async function scrapeTikTokLikesInPage(tiktokUsername) {
     return null;
   }
 
-  async function fetchSecUidFromProfileHtml(username) {
-    const profileUrl = `https://www.tiktok.com/@${encodeURIComponent(username)}`;
-    const response = await fetch(profileUrl, {
+  function extractUsernameFromHtml(html) {
+    if (typeof html !== "string" || !html) {
+      return null;
+    }
+
+    const patterns = [
+      /"uniqueId":"([^"]+)"/,
+      /\\"uniqueId\\":\\"([^\\"]+)\\"/,
+      /uniqueId\\u0022:\\u0022([^\\]+)\\u0022/,
+    ];
+
+    for (const pattern of patterns) {
+      const match = html.match(pattern);
+      if (match?.[1]) {
+        return match[1];
+      }
+    }
+
+    return null;
+  }
+
+  async function fetchLoggedInAccountFromPage() {
+    const response = await fetch(window.location.href, {
       credentials: "include",
       headers: {
         Accept: "text/html,application/xhtml+xml",
@@ -588,6 +568,7 @@ async function scrapeTikTokLikesInPage(tiktokUsername) {
       contentType: response.headers.get("content-type") || "unknown",
       textLength: html.length,
       secUid: extractSecUidFromHtml(html),
+      username: extractUsernameFromHtml(html),
     };
   }
 
@@ -682,47 +663,29 @@ async function scrapeTikTokLikesInPage(tiktokUsername) {
     const msTokenMatch = document.cookie.match(/(?:^|; )msToken=([^;]*)/);
     const msToken = msTokenMatch ? decodeURIComponent(msTokenMatch[1]) : null;
 
-    let detailResult = null;
-    let detailData = null;
-    let detailError = null;
     let secUid = null;
+    let username = null;
+    let accountFallback = null;
 
     try {
-      detailResult = await fetchTikTokJson(
-        buildUserDetailUrl(tiktokUsername, msToken),
-        "detail"
-      );
-      detailData = detailResult.data;
-      secUid = extractSecUid(detailData);
-    } catch (error) {
-      detailError = String(error?.message || error);
+      accountFallback = await fetchLoggedInAccountFromPage();
+      secUid = accountFallback.secUid;
+      username = accountFallback.username;
+    } catch {
+      accountFallback = null;
     }
 
-    let profileFallback = null;
-    if (!secUid) {
-      try {
-        profileFallback = await fetchSecUidFromProfileHtml(tiktokUsername);
-        secUid = profileFallback.secUid;
-      } catch {
-        profileFallback = null;
-      }
-    }
-
-    if (!secUid) {
+    if (!secUid || !username) {
       return {
         ok: false,
         error:
-          "Could not resolve this TikTok profile from the open TikTok tab. Double-check the username and stay logged in.",
+          "Could not resolve the logged-in TikTok account from the open TikTok tab. Stay logged in and keep TikTok open on your profile or likes page.",
         debug: {
-          detailError,
-          detail: detailData ? summarizeResponseShape(detailData) : null,
-          detailSigned: detailResult?.signed ?? null,
-          detailContentType: detailResult?.contentType ?? null,
-          detailTextLength: detailResult?.textLength ?? null,
-          fallbackStatus: profileFallback?.status ?? null,
-          fallbackContentType: profileFallback?.contentType ?? null,
-          fallbackTextLength: profileFallback?.textLength ?? null,
-          fallbackFoundSecUid: Boolean(profileFallback?.secUid),
+          fallbackStatus: accountFallback?.status ?? null,
+          fallbackContentType: accountFallback?.contentType ?? null,
+          fallbackTextLength: accountFallback?.textLength ?? null,
+          fallbackFoundSecUid: Boolean(accountFallback?.secUid),
+          fallbackFoundUsername: Boolean(accountFallback?.username),
         },
       };
     }
@@ -763,13 +726,13 @@ async function scrapeTikTokLikesInPage(tiktokUsername) {
     }
 
     console.log("[DEBUG][tfulike-sync]", "likes-scrape-finished", {
-      username: tiktokUsername,
+      username,
       secUidResolved: Boolean(secUid),
       totalLikes: likes.length,
       preview: likes.slice(0, 3).map((like) => _summarizeLikeForDebug(like)),
     });
 
-    return { ok: true, likes };
+    return { ok: true, username, likes };
   } catch (error) {
     return {
       ok: false,

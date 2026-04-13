@@ -3,6 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { CreateRoomForm } from "@/components/create-room-form";
 import { mockDict } from "@/__tests__/helpers/dict-mock";
+import type { Profile } from "@/lib/types";
 
 // Mock fetch
 const mockPush = vi.fn();
@@ -13,16 +14,19 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/",
 }));
 
-function storeProfile() {
-  localStorage.setItem(
-    "tfulike_profile",
-    JSON.stringify({
-      nickname: "Alice",
-      color: "#5856d6",
-      tiktok: "cooluser",
-    })
-  );
-}
+const testProfile: Profile = {
+  id: "user-1",
+  nickname: "Alice",
+  color: "#5856d6",
+  avatar_url: null,
+  tiktok_username: null,
+  sync_status: "idle",
+  sync_error: null,
+  synced_at: null,
+  onboarding_completed: true,
+  created_at: "2025-01-01",
+  updated_at: "2025-01-01",
+};
 
 describe("CreateRoomForm", () => {
   beforeEach(() => {
@@ -30,25 +34,15 @@ describe("CreateRoomForm", () => {
     localStorage.clear();
   });
 
-  it("redirects to home profile setup when no stored profile exists", () => {
-    render(<CreateRoomForm lang="en" dict={mockDict} />);
-
-    expect(mockReplace).toHaveBeenCalledWith("/en?profile=edit");
-  });
-
-  it("shows the stored profile summary", () => {
-    storeProfile();
-
-    render(<CreateRoomForm lang="en" dict={mockDict} />);
+  it("shows the profile summary", () => {
+    render(<CreateRoomForm lang="en" dict={mockDict} profile={testProfile} />);
 
     expect(screen.getByText("Alice")).toBeInTheDocument();
-    expect(screen.getByText("@cooluser")).toBeInTheDocument();
+    expect(screen.queryByText(/@/)).not.toBeInTheDocument();
   });
 
-  it("renders stored profile summary and submit button", () => {
-    storeProfile();
-
-    render(<CreateRoomForm lang="en" dict={mockDict} />);
+  it("renders profile summary and submit button", () => {
+    render(<CreateRoomForm lang="en" dict={mockDict} profile={testProfile} />);
     expect(screen.getByText(mockDict.profile.title)).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: mockDict.create.create })
@@ -56,47 +50,27 @@ describe("CreateRoomForm", () => {
   });
 
   it("keeps the create button pinned to the bottom of the form column", () => {
-    storeProfile();
-
-    render(<CreateRoomForm lang="en" dict={mockDict} />);
+    render(<CreateRoomForm lang="en" dict={mockDict} profile={testProfile} />);
 
     expect(screen.getByRole("button", { name: mockDict.create.create })).toHaveClass(
       "mt-auto"
     );
   });
 
-  it("submit button is disabled when nickname is empty", () => {
-    render(<CreateRoomForm lang="en" dict={mockDict} />);
-    const btn = screen.getByRole("button", { name: mockDict.create.create });
-    expect(btn).toBeDisabled();
-  });
-
-  it("submit button enables when a stored profile exists", () => {
-    storeProfile();
-
-    render(<CreateRoomForm lang="en" dict={mockDict} />);
-
+  it("submit button is enabled when profile exists", () => {
+    render(<CreateRoomForm lang="en" dict={mockDict} profile={testProfile} />);
     const btn = screen.getByRole("button", { name: mockDict.create.create });
     expect(btn).not.toBeDisabled();
   });
 
-  it("renders the stored color chip", () => {
-    storeProfile();
-
-    render(<CreateRoomForm lang="en" dict={mockDict} />);
-    expect(screen.getByText(mockDict.profile.pickColor)).toBeInTheDocument();
-    expect(screen.getByLabelText("Stored color #5856d6")).toBeInTheDocument();
-  });
-
   it("shows error when API returns an error", async () => {
     const user = userEvent.setup();
-    storeProfile();
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: false,
       json: () => Promise.resolve({ error: "Failed to create room" }),
     }) as never;
 
-    render(<CreateRoomForm lang="en" dict={mockDict} />);
+    render(<CreateRoomForm lang="en" dict={mockDict} profile={testProfile} />);
 
     const btn = screen.getByRole("button", { name: mockDict.create.create });
     await user.click(btn);
@@ -108,17 +82,16 @@ describe("CreateRoomForm", () => {
 
   it("navigates to room on success and stores session", async () => {
     const user = userEvent.setup();
-    storeProfile();
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: () =>
         Promise.resolve({
           room: { pin: "4567", id: "r1" },
-          player: { id: "p1", session_token: "tok" },
+          player: { id: "p1" },
         }),
     }) as never;
 
-    render(<CreateRoomForm lang="en" dict={mockDict} />);
+    render(<CreateRoomForm lang="en" dict={mockDict} profile={testProfile} />);
 
     const btn = screen.getByRole("button", { name: mockDict.create.create });
     await user.click(btn);
@@ -132,25 +105,21 @@ describe("CreateRoomForm", () => {
     expect(stored.playerId).toBe("p1");
     expect(stored.roomPin).toBe("4567");
 
+    // Auth-based: API receives empty body (profile comes from server-side auth)
     expect(globalThis.fetch).toHaveBeenCalledWith(
       "/api/rooms",
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({
-          nickname: "Alice",
-          color: "#5856d6",
-          tiktok_username: "cooluser",
-        }),
+        body: JSON.stringify({}),
       })
     );
   });
 
   it("shows connection error on fetch failure", async () => {
     const user = userEvent.setup();
-    storeProfile();
     globalThis.fetch = vi.fn().mockRejectedValue(new Error("network")) as never;
 
-    render(<CreateRoomForm lang="en" dict={mockDict} />);
+    render(<CreateRoomForm lang="en" dict={mockDict} profile={testProfile} />);
     await user.click(screen.getByRole("button", { name: mockDict.create.create }));
 
     await waitFor(() => {

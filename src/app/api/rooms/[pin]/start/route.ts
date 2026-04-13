@@ -1,27 +1,36 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { assignRoundOrder, calculateTotalRounds } from "@/lib/game";
 import type { RoomSettings } from "@/lib/types";
 
 /**
  * POST /api/rooms/[pin]/start — Start the game
  *
- * New flow (Chrome Extension pipeline):
- * 1. Verify all players have sync_status = 'synced'
- * 2. Read synced likes from the `likes` table
- * 3. Insert videos into DB from likes
- * 4. Randomly distribute videos across rounds (non-flat distribution)
- * 5. Create first round and start the game
+ * Auth-based flow:
+ * 1. Verify caller is the host (via auth user_id → player.user_id)
+ * 2. Check profile sync_status for all players
+ * 3. Read global user_likes for each player's user_id
+ * 4. Insert videos into DB from likes
+ * 5. Randomly distribute videos across rounds
+ * 6. Create first round and start the game
  */
 export async function POST(
-  request: Request,
+  _request: Request,
   { params }: { params: Promise<{ pin: string }> }
 ) {
   try {
     const { pin } = await params;
-    const body = await request.json().catch(() => ({}));
-    const { player_id } = body as { player_id?: string };
     const supabase = await createClient();
+    const adminSupabase = createAdminClient();
+
+    // Require authenticated user
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
     // Get room
     const { data: room, error: roomError } = await supabase
@@ -38,18 +47,10 @@ export async function POST(
       );
     }
 
-    // Verify caller is the host
-    if (player_id && room.host_player_id && player_id !== room.host_player_id) {
-      return NextResponse.json(
-        { error: "Only the host can start the game" },
-        { status: 403 }
-      );
-    }
-
-    // Get players
-    const { data: players } = await supabase
+    // Get players with user_id
+    const { data: players } = await adminSupabase
       .from("players")
-      .select("id, tiktok_username, nickname, sync_status")
+      .select("id, user_id, tiktok_username, nickname, sync_status")
       .eq("room_id", room.id);
 
     if (!players || players.length < 2) {
@@ -59,35 +60,45 @@ export async function POST(
       );
     }
 
-    // Check all players have synced their TikTok likes
-    const unsyncedPlayers = players.filter((p) => p.sync_status !== "synced");
-    if (unsyncedPlayers.length > 0) {
-      const names = unsyncedPlayers.map((p) => p.nickname);
+    // Verify caller is the host (via user_id match)
+    const callerPlayer = players.find((p) => p.user_id === user.id);
+    if (!callerPlayer || callerPlayer.id !== room.host_player_id) {
       return NextResponse.json(
-        {
-          error: `Players have not synced their TikTok likes: ${names.join(", ")}`,
-        },
-        { status: 400 }
+        { error: "Only the host can start the game" },
+        { status: 403 }
       );
+    }
+
+    // All players must have user_id (auth required)
+    const userIds = players
+      .filter((p) => p.user_id)
+      .map((p) => p.user_id!);
+
+    // Check profiles' sync_status for all authenticated players
+    if (userIds.length > 0) {
+      const { data: profiles } = await adminSupabase
+        .from("profiles")
+        .select("id, sync_status, nickname")
+        .in("id", userIds);
+
+      const unsyncedProfiles = (profiles ?? []).filter(
+        (p) => p.sync_status !== "synced"
+      );
+      if (unsyncedProfiles.length > 0) {
+        const names = unsyncedProfiles.map((p) => p.nickname);
+        return NextResponse.json(
+          {
+            error: `Players have not synced their TikTok likes: ${names.join(", ")}`,
+          },
+          { status: 400 }
+        );
+      }
     }
 
     const settings = room.settings as RoomSettings;
     const totalRounds = calculateTotalRounds(players.length, settings);
 
-    // Read synced likes from the likes table for all players in this room
-    const { data: allLikes, error: likesError } = await supabase
-      .from("likes")
-      .select("*")
-      .eq("room_id", room.id);
-
-    if (likesError || !allLikes || allLikes.length === 0) {
-      return NextResponse.json(
-        { error: "No synced likes found. All players must sync their TikTok likes first." },
-        { status: 400 }
-      );
-    }
-
-    // Group likes by player
+    // Read global user_likes for all players
     const likesByPlayer = new Map<
       string,
       Array<{
@@ -97,41 +108,68 @@ export async function POST(
         tiktok_video_id: string;
       }>
     >();
-    for (const like of allLikes) {
-      const rawVideoUrls = Array.isArray(like.video_urls) ? like.video_urls : [];
-      const mergedUrls = [...rawVideoUrls, like.video_url].filter(
-        (url, index, arr) =>
-          typeof url === "string" &&
-          /^https?:\/\//i.test(url) &&
-          arr.indexOf(url) === index
-      ) as string[];
 
-      const existing = likesByPlayer.get(like.player_id) || [];
-      existing.push({
-        tiktok_url: like.tiktok_url,
-        video_url: mergedUrls[0] ?? null,
-        video_urls: mergedUrls,
-        tiktok_video_id: like.tiktok_video_id,
-      });
-      likesByPlayer.set(like.player_id, existing);
+    if (userIds.length > 0) {
+      const { data: userLikes } = await adminSupabase
+        .from("user_likes")
+        .select("*")
+        .in("user_id", userIds);
+
+      if (userLikes) {
+        // Map user_id → player_id
+        const userToPlayer = new Map(
+          players
+            .filter((p) => p.user_id)
+            .map((p) => [p.user_id!, p.id])
+        );
+
+        for (const like of userLikes) {
+          const playerId = userToPlayer.get(like.user_id);
+          if (!playerId) continue;
+
+          const rawVideoUrls = Array.isArray(like.video_urls) ? like.video_urls : [];
+          const mergedUrls = [...rawVideoUrls, like.video_url].filter(
+            (url, index, arr) =>
+              typeof url === "string" &&
+              /^https?:\/\//i.test(url) &&
+              arr.indexOf(url) === index
+          ) as string[];
+
+          const existing = likesByPlayer.get(playerId) || [];
+          existing.push({
+            tiktok_url: like.tiktok_url,
+            video_url: mergedUrls[0] ?? null,
+            video_urls: mergedUrls,
+            tiktok_video_id: like.tiktok_video_id,
+          });
+          likesByPlayer.set(playerId, existing);
+        }
+      }
     }
 
-    // Verify each player has at least 1 like
-    const emptyPlayers = players.filter(
-      (p) => !likesByPlayer.has(p.id) || likesByPlayer.get(p.id)!.length === 0
+    if (likesByPlayer.size === 0) {
+      return NextResponse.json(
+        { error: "No synced likes found. All players must sync their TikTok likes first." },
+        { status: 400 }
+      );
+    }
+
+    // Check if any player has no likes at all
+    const playersWithoutLikes = players.filter(
+      (p) => p.user_id && !likesByPlayer.has(p.id)
     );
-    if (emptyPlayers.length > 0) {
-      const emptyNames = emptyPlayers.map((p) => p.nickname);
+    if (playersWithoutLikes.length > 0) {
+      const names = playersWithoutLikes.map((p) => p.nickname);
       return NextResponse.json(
         {
-          error: `No synced likes found for: ${emptyNames.join(", ")}. They need to sync again.`,
+          error: `${names.join(", ")} ${names.length === 1 ? "has" : "have"} no likes. Please sync again.`,
         },
         { status: 400 }
       );
     }
 
     // Delete any existing videos for this room (clean start)
-    await supabase.from("videos").delete().eq("room_id", room.id);
+    await adminSupabase.from("videos").delete().eq("room_id", room.id);
 
     const roundAssignments = assignRoundOrder(
       new Map(
@@ -168,7 +206,7 @@ export async function POST(
       used: false,
     }));
 
-    const { data: insertedVideos, error: videoInsertError } = await supabase
+    const { data: insertedVideos, error: videoInsertError } = await adminSupabase
       .from("videos")
       .insert(videoRows)
       .select();
@@ -182,12 +220,12 @@ export async function POST(
 
     // Pick first video and create first round (no deadline — timer-free)
     const firstVideoRow = insertedVideos[0];
-    await supabase
+    await adminSupabase
       .from("videos")
       .update({ used: true })
       .eq("id", firstVideoRow.id);
 
-    const { data: round, error: roundError } = await supabase
+    const { data: round, error: roundError } = await adminSupabase
       .from("rounds")
       .insert({
         room_id: room.id,
@@ -201,7 +239,7 @@ export async function POST(
       .single();
 
     if (roundError || !round) {
-      await supabase
+      await adminSupabase
         .from("videos")
         .update({ used: false })
         .eq("id", firstVideoRow.id);
@@ -212,7 +250,7 @@ export async function POST(
     }
 
     // Update room status
-    const { error: updateError } = await supabase
+    const { error: updateError } = await adminSupabase
       .from("rooms")
       .update({
         status: "playing",

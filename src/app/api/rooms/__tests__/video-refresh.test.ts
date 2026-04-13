@@ -7,6 +7,14 @@ vi.mock("@/lib/supabase/server", () => ({
 
 import { createClient } from "@/lib/supabase/server";
 
+function makeAuthMock(userId: string | null) {
+  return {
+    getUser: vi.fn().mockResolvedValue({
+      data: { user: userId ? { id: userId } : null },
+    }),
+  };
+}
+
 function makeChain(resolveValue: { data: unknown; error: unknown }) {
   const chain: Record<string, unknown> = {};
   const proxy: unknown = new Proxy(chain, {
@@ -26,8 +34,24 @@ describe("POST /api/videos/[id]/refresh", () => {
     vi.clearAllMocks();
   });
 
+  it("returns 401 when user is not authenticated", async () => {
+    const sb = {
+      auth: makeAuthMock(null),
+      from: vi.fn(() => makeChain({ data: null, error: null })),
+    };
+    vi.mocked(createClient).mockResolvedValue(sb as never);
+
+    const res = await POST(
+      new Request("http://localhost/api/videos/v1/refresh", { method: "POST" }),
+      { params: Promise.resolve({ id: "v1" }) }
+    );
+
+    expect(res.status).toBe(401);
+  });
+
   it("returns 404 when video not found", async () => {
     const sb = {
+      auth: makeAuthMock("auth-user-1"),
       from: vi.fn(() => makeChain({ data: null, error: { message: "not found" } })),
     };
     vi.mocked(createClient).mockResolvedValue(sb as never);
@@ -50,6 +74,7 @@ describe("POST /api/videos/[id]/refresh", () => {
       used: false,
     };
     const sb = {
+      auth: makeAuthMock("auth-user-1"),
       from: vi.fn(() => makeChain({ data: videoData, error: null })),
     };
     vi.mocked(createClient).mockResolvedValue(sb as never);

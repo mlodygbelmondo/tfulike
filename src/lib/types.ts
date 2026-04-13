@@ -3,6 +3,38 @@
 
 export type RoomStatus = "lobby" | "playing" | "finished";
 export type RoundStatus = "voting" | "reveal" | "done";
+export type SyncStatus = "idle" | "syncing" | "synced" | "error";
+
+// ============================================
+// Auth / Profile types
+// ============================================
+
+export interface Profile {
+  id: string; // matches auth.users.id
+  nickname: string;
+  color: string;
+  avatar_url: string | null;
+  tiktok_username: string | null;
+  sync_status: SyncStatus;
+  sync_error: string | null;
+  synced_at: string | null;
+  onboarding_completed: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UserLike {
+  id: string;
+  user_id: string;
+  tiktok_video_id: string;
+  tiktok_url: string | null;
+  video_url: string | null;
+  video_urls: string[];
+  author_username: string | null;
+  description: string | null;
+  cover_url: string | null;
+  created_at: string;
+}
 
 export interface RoomSettings {
   max_rounds: number | null; // null = auto (players × 3)
@@ -20,14 +52,13 @@ export interface Room {
   updated_at: string;
 }
 
-export type SyncStatus = "idle" | "syncing" | "synced" | "error";
-
 export interface Player {
   id: string;
   room_id: string;
+  user_id: string | null; // FK to profiles.id (null for legacy anonymous players)
   nickname: string;
   color: string;
-  session_token: string;
+  session_token?: string; // legacy, not used with Supabase Auth
   is_host: boolean;
   score: number;
   videos_ready: boolean;

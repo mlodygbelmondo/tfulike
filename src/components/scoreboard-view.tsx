@@ -24,8 +24,14 @@ export function ScoreboardView({
   useEffect(() => {
     async function load() {
       const supabase = createClient();
+
+      // Use auth to verify the user belongs in this room, fall back to stored session
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       const session = getStoredSession();
-      if (!session || session.roomPin !== pin) {
+
+      if (!user && (!session || session.roomPin !== pin)) {
         router.push(`/${lang}/join`);
         return;
       }

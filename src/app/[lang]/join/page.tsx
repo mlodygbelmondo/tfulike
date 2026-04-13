@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { getDictionary } from "@/lib/dictionaries";
 import { isValidLocale } from "@/lib/i18n";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { JoinRoomForm } from "@/components/join-room-form";
+import { getUser, getProfile } from "@/lib/auth";
 
 export default async function JoinPage({
   params,
@@ -11,6 +12,13 @@ export default async function JoinPage({
 }) {
   const { lang } = await params;
   if (!isValidLocale(lang)) notFound();
+
+  const user = await getUser();
+  if (!user) redirect(`/${lang}`);
+
+  const profile = await getProfile();
+  if (!profile?.onboarding_completed) redirect(`/${lang}/onboarding`);
+
   const dict = await getDictionary(lang);
 
   return (
@@ -28,7 +36,7 @@ export default async function JoinPage({
       <h1 className="text-3xl font-bold mb-8">{dict.join.title}</h1>
 
       <div className="flex w-full flex-1 flex-col">
-        <JoinRoomForm lang={lang} dict={dict} />
+        <JoinRoomForm lang={lang} dict={dict} profile={profile} />
       </div>
     </main>
   );

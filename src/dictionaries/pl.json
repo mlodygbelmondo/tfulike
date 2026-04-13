@@ -102,5 +102,32 @@
     "playAgain": "Zagraj Ponownie",
     "newGame": "Nowa Gra",
     "rank": "Miejsce"
+  },
+  "auth": {
+    "signInWithGoogle": "Zaloguj się przez Google",
+    "signOut": "Wyloguj",
+    "error": "Logowanie nie powiodło się. Spróbuj ponownie."
+  },
+  "onboarding": {
+    "step1Title": "Witaj!",
+    "step1Subtitle": "Ustawmy Twój profil",
+    "nickname": "Twój Nick",
+    "nicknamePlaceholder": "Wpisz nick...",
+    "pickColor": "Wybierz Kolor",
+    "next": "Dalej",
+    "step2Title": "Synchronizuj lajki TikTok",
+    "step2Subtitle": "Użyjemy Twoich polubień w grze",
+    "syncLikes": "Synchronizuj lajki TikTok",
+    "syncing": "Synchronizacja...",
+    "synced": "Lajki zsynchronizowane!",
+    "syncError": "Synchronizacja nie powiodła się. Spróbuj ponownie.",
+    "syncRetry": "Ponów",
+    "skipSync": "Pomiń (brak Chrome na komputerze)",
+    "desktopSyncHint": "Otwórz TikToka w Chrome na komputerze z zainstalowanym rozszerzeniem tf u like?",
+    "step3Title": "Wszystko gotowe!",
+    "step3Subtitle": "Czas na grę",
+    "finish": "Zaczynamy!",
+    "back": "Wstecz",
+    "stepOf": "z"
   }
 }

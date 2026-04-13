@@ -1,37 +1,34 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
-// POST /api/rooms/reconnect — Reconnect to a room using session token
+// POST /api/rooms/reconnect — Reconnect to a room using Supabase Auth
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { player_id, session_token, room_pin } = body;
+    const { room_pin } = body;
 
-    if (!player_id || !session_token || !room_pin) {
+    if (!room_pin) {
       return NextResponse.json(
-        { error: "player_id, session_token, and room_pin are required" },
+        { error: "room_pin is required" },
         { status: 400 }
       );
     }
 
     const supabase = await createClient();
 
-    // Find the player by ID and verify session token
-    const { data: player, error: playerError } = await supabase
-      .from("players")
-      .select("*")
-      .eq("id", player_id)
-      .eq("session_token", session_token)
-      .single();
+    // Verify authenticated user
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-    if (playerError || !player) {
+    if (!user) {
       return NextResponse.json(
-        { error: "Invalid session" },
+        { error: "Not authenticated" },
         { status: 401 }
       );
     }
 
-    // Find the room and verify it matches
+    // Find the room
     const { data: room, error: roomError } = await supabase
       .from("rooms")
       .select("*")
@@ -45,11 +42,18 @@ export async function POST(request: Request) {
       );
     }
 
-    // Verify the player belongs to this room
-    if (player.room_id !== room.id) {
+    // Find the player by user_id in this room
+    const { data: player, error: playerError } = await supabase
+      .from("players")
+      .select("*")
+      .eq("room_id", room.id)
+      .eq("user_id", user.id)
+      .single();
+
+    if (playerError || !player) {
       return NextResponse.json(
-        { error: "Player does not belong to this room" },
-        { status: 403 }
+        { error: "Player not found in this room" },
+        { status: 404 }
       );
     }
 
@@ -58,7 +62,7 @@ export async function POST(request: Request) {
       return NextResponse.json({
         room,
         player,
-        redirect: `/${room_pin}/results`,
+        redirect: `/room/${room_pin}/results`,
       });
     }
 

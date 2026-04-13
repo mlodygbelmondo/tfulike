@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { PlayerAvatar } from "@/components/player-avatar";
 import { getStoredSession } from "@/lib/game";
+import type { User } from "@supabase/supabase-js";
 import {
   requestVideoRefresh,
   checkExtensionPresent,
@@ -129,6 +130,7 @@ export function GamePlayView({
   const videoLoadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const extensionPresentRef = useRef<boolean | null>(null);
   const videoRefreshAttemptedRef = useRef(false);
+  const attemptExtensionRefreshRef = useRef<(() => Promise<void>) | null>(null);
   const resolvedVideoSrcRef = useRef<string | null>(null);
   const videoResolveTokenRef = useRef(0);
   const currentVideoIdRef = useRef<string | null>(null);
@@ -139,10 +141,13 @@ export function GamePlayView({
     video?.video_url ?? "",
     Array.isArray(video?.video_urls) ? video.video_urls.join("|") : "",
   ].join("::");
+  const currentPlayerId = currentPlayer?.id ?? null;
 
   useEffect(() => {
     currentVideoIdRef.current = video?.id ?? null;
   }, [video?.id]);
+
+  const authUserRef = useRef<User | null>(null);
 
   const fetchRound = useCallback(async () => {
     const fetchToken = fetchRoundTokenRef.current + 1;
@@ -150,7 +155,16 @@ export function GamePlayView({
     const supabase = createClient();
     const session = getStoredSession();
 
-    if (!session || session.roomPin !== pin) {
+    // Get the authenticated user to identify the current player
+    if (!authUserRef.current) {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      authUserRef.current = user;
+    }
+    const user = authUserRef.current;
+
+    if (!user && (!session || session.roomPin !== pin)) {
       router.push(`/${lang}/join`);
       return;
     }
@@ -189,9 +203,14 @@ export function GamePlayView({
 
     setPlayers((playersData as Player[]) || []);
 
-    const me = playersData?.find(
-      (p: Player) => p.id === session.playerId
-    );
+    // Identify current player: prefer auth user_id match, fall back to stored playerId
+    let me: Player | undefined;
+    if (user && playersData) {
+      me = playersData.find((p: Player) => p.user_id === user.id);
+    }
+    if (!me && session?.roomPin === pin && session.playerId && playersData) {
+      me = playersData.find((p: Player) => p.id === session.playerId);
+    }
     if (me) setCurrentPlayer(me as Player);
 
     // Get current round
@@ -236,12 +255,15 @@ export function GamePlayView({
     }
 
     // Check if we already voted
-    const { data: existingVote } = await supabase
-      .from("votes")
-      .select("guessed_player_id")
-      .eq("round_id", roundData.id)
-      .eq("player_id", session.playerId)
-      .maybeSingle();
+    const myPlayerId = me?.id || session?.playerId;
+    const { data: existingVote } = myPlayerId
+      ? await supabase
+          .from("votes")
+          .select("guessed_player_id")
+          .eq("round_id", roundData.id)
+          .eq("player_id", myPlayerId)
+          .maybeSingle()
+      : { data: null };
 
     if (fetchRoundTokenRef.current !== fetchToken) return;
 
@@ -305,72 +327,11 @@ export function GamePlayView({
         summary: summarizeVideoUrlForDebug(url),
       })),
     });
+    // We intentionally key this reset to the stable source signature rather than
+    // raw array identity so vote-triggered refetches do not blank and re-resolve
+    // the same video source.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoSourceKey]);
-
-  useEffect(() => {
-    const candidate = videoCandidates[videoCandidateIndex] || null;
-    const resolveToken = videoResolveTokenRef.current + 1;
-    videoResolveTokenRef.current = resolveToken;
-
-    if (resolvedVideoSrcRef.current) {
-      URL.revokeObjectURL(resolvedVideoSrcRef.current);
-      resolvedVideoSrcRef.current = null;
-    }
-
-    if (!candidate) {
-      setVideoResolving(false);
-      setVideoSrc(null);
-      return;
-    }
-
-    setVideoSrc(null);
-    setVideoLoadFailed(false);
-    setVideoResolving(true);
-
-    requestVideoDataUri(candidate)
-      .then((blobUrl) => {
-        if (videoResolveTokenRef.current !== resolveToken) {
-          URL.revokeObjectURL(blobUrl);
-          return;
-        }
-
-        resolvedVideoSrcRef.current = blobUrl;
-        setVideoResolving(false);
-        setVideoSrc(blobUrl);
-      })
-      .catch((err) => {
-        if (videoResolveTokenRef.current !== resolveToken) {
-          return;
-        }
-
-        logVideoDebug("video-data-fetch-error", {
-          videoId: video?.id ?? null,
-          candidateIndex: videoCandidateIndex,
-          candidate: summarizeVideoUrlForDebug(candidate),
-          error: String(err instanceof Error ? err.message : err),
-        });
-
-        const nextIndex = videoCandidateIndex + 1;
-        if (nextIndex < videoCandidates.length) {
-          setVideoCandidateIndex(nextIndex);
-          return;
-        }
-
-        if (!videoRefreshAttemptedRef.current) {
-          attemptExtensionRefresh();
-          return;
-        }
-
-        setVideoResolving(false);
-        setVideoLoadFailed(true);
-      });
-
-    return () => {
-      if (videoResolveTokenRef.current === resolveToken) {
-        videoResolveTokenRef.current += 1;
-      }
-    };
-  }, [videoCandidates, videoCandidateIndex, videoSourceKey]);
 
   useEffect(() => {
     return () => {
@@ -541,7 +502,7 @@ export function GamePlayView({
    * Try to get fresh video URLs from the extension by re-scraping TikTok.
    * Falls back gracefully if extension is not present.
    */
-  async function attemptExtensionRefresh() {
+  const attemptExtensionRefresh = useCallback(async () => {
     if (!video || videoRefreshAttempted) return;
     const refreshForVideoId = video.id;
 
@@ -614,7 +575,81 @@ export function GamePlayView({
         setVideoRefreshing(false);
       }
     }
-  }
+  }, [video, videoRefreshAttempted]);
+
+  useEffect(() => {
+    attemptExtensionRefreshRef.current = attemptExtensionRefresh;
+  }, [attemptExtensionRefresh]);
+
+  useEffect(() => {
+    const candidate = videoCandidates[videoCandidateIndex] || null;
+    const resolveToken = videoResolveTokenRef.current + 1;
+    videoResolveTokenRef.current = resolveToken;
+
+    if (resolvedVideoSrcRef.current) {
+      URL.revokeObjectURL(resolvedVideoSrcRef.current);
+      resolvedVideoSrcRef.current = null;
+    }
+
+    if (!candidate) {
+      setVideoResolving(false);
+      setVideoSrc(null);
+      return;
+    }
+
+    setVideoSrc(null);
+    setVideoLoadFailed(false);
+    setVideoResolving(true);
+
+    requestVideoDataUri(candidate)
+      .then((blobUrl) => {
+        if (videoResolveTokenRef.current !== resolveToken) {
+          URL.revokeObjectURL(blobUrl);
+          return;
+        }
+
+        resolvedVideoSrcRef.current = blobUrl;
+        setVideoResolving(false);
+        setVideoSrc(blobUrl);
+      })
+      .catch((err) => {
+        if (videoResolveTokenRef.current !== resolveToken) {
+          return;
+        }
+
+        logVideoDebug("video-data-fetch-error", {
+          videoId: video?.id ?? null,
+          candidateIndex: videoCandidateIndex,
+          candidate: summarizeVideoUrlForDebug(candidate),
+          error: String(err instanceof Error ? err.message : err),
+        });
+
+        const nextIndex = videoCandidateIndex + 1;
+        if (nextIndex < videoCandidates.length) {
+          setVideoCandidateIndex(nextIndex);
+          return;
+        }
+
+        if (!videoRefreshAttemptedRef.current) {
+          void attemptExtensionRefreshRef.current?.();
+          return;
+        }
+
+        setVideoResolving(false);
+        setVideoLoadFailed(true);
+      });
+
+    return () => {
+      if (videoResolveTokenRef.current === resolveToken) {
+        videoResolveTokenRef.current += 1;
+      }
+    };
+  }, [
+    video?.id,
+    videoCandidates,
+    videoCandidateIndex,
+    videoSourceKey,
+  ]);
 
   // Initial load
   useEffect(() => {
@@ -626,13 +661,12 @@ export function GamePlayView({
     if (phase !== "voting" || !allVoted || revealTriggeredRef.current) return;
 
     revealTriggeredRef.current = true;
-    const session = getStoredSession();
     fetch(`/api/rooms/${pin}/rounds/reveal`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ player_id: session?.playerId }),
+      body: JSON.stringify({ player_id: currentPlayerId }),
     }).then(() => fetchRound());
-  }, [phase, allVoted, pin, fetchRound]);
+  }, [phase, allVoted, pin, currentPlayerId, fetchRound]);
 
   // Realtime subscription
   useEffect(() => {
@@ -852,7 +886,6 @@ export function GamePlayView({
             <div className="pointer-events-none absolute inset-0 bg-black/35" />
             <div className="absolute inset-0 z-10 grid place-items-center">
               <video
-                key={videoSrc}
                 ref={videoElementRef}
                 src={videoSrc}
                 className={

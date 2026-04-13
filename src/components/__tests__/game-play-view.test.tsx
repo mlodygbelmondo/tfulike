@@ -35,6 +35,113 @@ function makeChain(resolveValue: { data: unknown; error?: unknown; count?: numbe
   return proxy;
 }
 
+const TEST_USER_ID = "auth-user-1";
+
+function makeAuthUser() {
+  return { id: TEST_USER_ID, email: "alice@example.com" };
+}
+
+function makeSupabaseMock(overrides: {
+  room: Record<string, unknown>;
+  players: Record<string, unknown>[];
+  round: Record<string, unknown>;
+  video: Record<string, unknown>;
+}) {
+  let votesCallIndex = 0;
+  const authGetUser = vi.fn().mockResolvedValue({ data: { user: makeAuthUser() } });
+
+  const supabase = {
+    auth: { getUser: authGetUser },
+    from: vi.fn((table: string) => {
+      const responses: Record<string, Array<{ data: unknown; error: unknown; count?: number | null }>> = {
+        rooms: [{ data: overrides.room, error: null }],
+        players: [{ data: overrides.players, error: null }],
+        rounds: [{ data: overrides.round, error: null }],
+        videos: [{ data: overrides.video, error: null }],
+        votes: [
+          { data: null, error: null },
+          { data: null, error: null, count: 0 },
+        ],
+      };
+
+      const queue = responses[table];
+      const index = table === "votes" ? votesCallIndex++ : 0;
+      return makeChain(queue?.[index] || { data: null, error: null });
+    }),
+    channel: vi.fn(() => ({
+      on: vi.fn().mockReturnThis(),
+      subscribe: vi.fn().mockReturnValue({}),
+    })),
+    removeChannel: vi.fn(),
+  };
+
+  return supabase;
+}
+
+function storeSession(playerId: string, roomPin: string) {
+  localStorage.setItem(
+    "tfulike_session",
+    JSON.stringify({ playerId, roomPin })
+  );
+}
+
+function makePlayer(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: "p1",
+    room_id: "r1",
+    user_id: TEST_USER_ID,
+    nickname: "Alice",
+    color: "#ff2d55",
+    is_host: true,
+    score: 0,
+    videos_ready: true,
+    tiktok_username: "alice",
+    sync_status: "synced",
+    sync_error: null,
+    synced_at: null,
+    created_at: "2025-01-01",
+    ...overrides,
+  };
+}
+
+function makeRoom() {
+  return {
+    id: "r1",
+    pin: "1234",
+    status: "playing",
+    current_round: 1,
+    settings: { total_rounds: 3 },
+  };
+}
+
+function makeRound() {
+  return {
+    id: "round-1",
+    room_id: "r1",
+    round_number: 1,
+    video_id: "video-1",
+    correct_player_id: "p1",
+    status: "voting",
+    deadline: null,
+    started_at: "2025-01-01",
+    ended_at: null,
+  };
+}
+
+function makeVideo(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: "video-1",
+    room_id: "r1",
+    player_id: "p1",
+    tiktok_url: "https://www.tiktok.com/@alice/video/1",
+    video_url: "https://example.com/video.mp4",
+    video_urls: ["https://example.com/video.mp4"],
+    used: true,
+    created_at: "2025-01-01",
+    ...overrides,
+  };
+}
+
 describe("GamePlayView", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -43,95 +150,26 @@ describe("GamePlayView", () => {
   });
 
   it("shows the current player as a voting option", async () => {
-    localStorage.setItem(
-      "tfulike_session",
-      JSON.stringify({ playerId: "p1", sessionToken: "token", roomPin: "1234" })
-    );
+    storeSession("p1", "1234");
 
-    let callIndex = 0;
-    const room = {
-      id: "r1",
-      pin: "1234",
-      status: "playing",
-      current_round: 1,
-      settings: { total_rounds: 3 },
-    };
     const players = [
-      {
-        id: "p1",
-        room_id: "r1",
-        nickname: "Alice",
-        color: "#ff2d55",
-        session_token: "token",
-        is_host: true,
-        score: 0,
-        videos_ready: true,
-        tiktok_username: "alice",
-        sync_status: "synced",
-        sync_error: null,
-        synced_at: null,
-        created_at: "2025-01-01",
-      },
-      {
+      makePlayer(),
+      makePlayer({
         id: "p2",
-        room_id: "r1",
+        user_id: "auth-user-2",
         nickname: "Bob",
         color: "#007aff",
-        session_token: "token-2",
         is_host: false,
-        score: 0,
-        videos_ready: true,
         tiktok_username: "bob",
-        sync_status: "synced",
-        sync_error: null,
-        synced_at: null,
-        created_at: "2025-01-01",
-      },
-    ];
-    const round = {
-      id: "round-1",
-      room_id: "r1",
-      round_number: 1,
-      video_id: "video-1",
-      correct_player_id: "p1",
-      status: "voting",
-      deadline: null,
-      started_at: "2025-01-01",
-      ended_at: null,
-    };
-    const video = {
-      id: "video-1",
-      room_id: "r1",
-      player_id: "p1",
-      tiktok_url: "https://www.tiktok.com/@alice/video/1",
-      video_url: "https://example.com/video.mp4",
-      used: true,
-      created_at: "2025-01-01",
-    };
-
-    const supabase = {
-      from: vi.fn((table: string) => {
-        const responses = {
-          rooms: [{ data: room, error: null }],
-          players: [{ data: players, error: null }],
-          rounds: [{ data: round, error: null }],
-          videos: [{ data: video, error: null }],
-          votes: [
-            { data: null, error: null },
-            { data: null, error: null, count: 0 },
-          ],
-        } as const;
-
-        const queue = responses[table as keyof typeof responses];
-        const index = table === "votes" ? callIndex++ : 0;
-        return makeChain(queue?.[index] || { data: null, error: null });
       }),
-      channel: vi.fn(() => ({
-        on: vi.fn().mockReturnThis(),
-        subscribe: vi.fn().mockReturnValue({}),
-      })),
-      removeChannel: vi.fn(),
-    };
+    ];
+
+    const supabase = makeSupabaseMock({
+      room: makeRoom(),
+      players,
+      round: makeRound(),
+      video: makeVideo(),
+    });
 
     vi.mocked(createClient).mockReturnValue(supabase as never);
 
@@ -144,83 +182,17 @@ describe("GamePlayView", () => {
   });
 
   it("loads the initial video playback source through the extension data fetcher", async () => {
-    localStorage.setItem(
-      "tfulike_session",
-      JSON.stringify({ playerId: "p1", sessionToken: "token", roomPin: "1234" })
-    );
+    storeSession("p1", "1234");
 
-    let callIndex = 0;
-    const room = {
-      id: "r1",
-      pin: "1234",
-      status: "playing",
-      current_round: 1,
-      settings: { total_rounds: 3 },
-    };
-    const players = [
-      {
-        id: "p1",
-        room_id: "r1",
-        nickname: "Alice",
-        color: "#ff2d55",
-        session_token: "token",
-        is_host: true,
-        score: 0,
-        videos_ready: true,
-        tiktok_username: "alice",
-        sync_status: "synced",
-        sync_error: null,
-        synced_at: null,
-        created_at: "2025-01-01",
-      },
-    ];
-    const round = {
-      id: "round-1",
-      room_id: "r1",
-      round_number: 1,
-      video_id: "video-1",
-      correct_player_id: "p1",
-      status: "voting",
-      deadline: null,
-      started_at: "2025-01-01",
-      ended_at: null,
-    };
     const rawVideoUrl = "https://www.tiktok.com/video/example.mp4?foo=bar";
     const dataUri = "blob:initial-video";
-    const video = {
-      id: "video-1",
-      room_id: "r1",
-      player_id: "p1",
-      tiktok_url: "https://www.tiktok.com/@alice/video/1",
-      video_url: rawVideoUrl,
-      video_urls: [rawVideoUrl],
-      used: true,
-      created_at: "2025-01-01",
-    };
 
-    const supabase = {
-      from: vi.fn((table: string) => {
-        const responses = {
-          rooms: [{ data: room, error: null }],
-          players: [{ data: players, error: null }],
-          rounds: [{ data: round, error: null }],
-          videos: [{ data: video, error: null }],
-          votes: [
-            { data: null, error: null },
-            { data: null, error: null, count: 0 },
-          ],
-        } as const;
-
-        const queue = responses[table as keyof typeof responses];
-        const index = table === "votes" ? callIndex++ : 0;
-        return makeChain(queue?.[index] || { data: null, error: null });
-      }),
-      channel: vi.fn(() => ({
-        on: vi.fn().mockReturnThis(),
-        subscribe: vi.fn().mockReturnValue({}),
-      })),
-      removeChannel: vi.fn(),
-    };
+    const supabase = makeSupabaseMock({
+      room: makeRoom(),
+      players: [makePlayer()],
+      round: makeRound(),
+      video: makeVideo({ video_url: rawVideoUrl, video_urls: [rawVideoUrl] }),
+    });
 
     vi.mocked(createClient).mockReturnValue(supabase as never);
     vi.mocked(requestVideoDataUri).mockResolvedValue(dataUri);
@@ -240,81 +212,14 @@ describe("GamePlayView", () => {
   });
 
   it("renders contain-mode video inside a centered foreground overlay", async () => {
-    localStorage.setItem(
-      "tfulike_session",
-      JSON.stringify({ playerId: "p1", sessionToken: "token", roomPin: "1234" })
-    );
+    storeSession("p1", "1234");
 
-    let callIndex = 0;
-    const room = {
-      id: "r1",
-      pin: "1234",
-      status: "playing",
-      current_round: 1,
-      settings: { total_rounds: 3 },
-    };
-    const players = [
-      {
-        id: "p1",
-        room_id: "r1",
-        nickname: "Alice",
-        color: "#ff2d55",
-        session_token: "token",
-        is_host: true,
-        score: 0,
-        videos_ready: true,
-        tiktok_username: "alice",
-        sync_status: "synced",
-        sync_error: null,
-        synced_at: null,
-        created_at: "2025-01-01",
-      },
-    ];
-    const round = {
-      id: "round-1",
-      room_id: "r1",
-      round_number: 1,
-      video_id: "video-1",
-      correct_player_id: "p1",
-      status: "voting",
-      deadline: null,
-      started_at: "2025-01-01",
-      ended_at: null,
-    };
-    const video = {
-      id: "video-1",
-      room_id: "r1",
-      player_id: "p1",
-      tiktok_url: "https://www.tiktok.com/@alice/video/1",
-      video_url: "https://example.com/video.mp4",
-      video_urls: ["https://example.com/video.mp4"],
-      used: true,
-      created_at: "2025-01-01",
-    };
-
-    const supabase = {
-      from: vi.fn((table: string) => {
-        const responses = {
-          rooms: [{ data: room, error: null }],
-          players: [{ data: players, error: null }],
-          rounds: [{ data: round, error: null }],
-          videos: [{ data: video, error: null }],
-          votes: [
-            { data: null, error: null },
-            { data: null, error: null, count: 0 },
-          ],
-        } as const;
-
-        const queue = responses[table as keyof typeof responses];
-        const index = table === "votes" ? callIndex++ : 0;
-        return makeChain(queue?.[index] || { data: null, error: null });
-      }),
-      channel: vi.fn(() => ({
-        on: vi.fn().mockReturnThis(),
-        subscribe: vi.fn().mockReturnValue({}),
-      })),
-      removeChannel: vi.fn(),
-    };
+    const supabase = makeSupabaseMock({
+      room: makeRoom(),
+      players: [makePlayer()],
+      round: makeRound(),
+      video: makeVideo(),
+    });
 
     vi.mocked(createClient).mockReturnValue(supabase as never);
 
@@ -334,10 +239,7 @@ describe("GamePlayView", () => {
   });
 
   it("shows a loading state instead of unavailable while resolving the video blob", async () => {
-    localStorage.setItem(
-      "tfulike_session",
-      JSON.stringify({ playerId: "p1", sessionToken: "token", roomPin: "1234" })
-    );
+    storeSession("p1", "1234");
 
     let resolveVideo: ((value: string) => void) | undefined;
     vi.mocked(requestVideoDataUri).mockImplementation(
@@ -347,76 +249,12 @@ describe("GamePlayView", () => {
         })
     );
 
-    let callIndex = 0;
-    const room = {
-      id: "r1",
-      pin: "1234",
-      status: "playing",
-      current_round: 1,
-      settings: { total_rounds: 3 },
-    };
-    const players = [
-      {
-        id: "p1",
-        room_id: "r1",
-        nickname: "Alice",
-        color: "#ff2d55",
-        session_token: "token",
-        is_host: true,
-        score: 0,
-        videos_ready: true,
-        tiktok_username: "alice",
-        sync_status: "synced",
-        sync_error: null,
-        synced_at: null,
-        created_at: "2025-01-01",
-      },
-    ];
-    const round = {
-      id: "round-1",
-      room_id: "r1",
-      round_number: 1,
-      video_id: "video-1",
-      correct_player_id: "p1",
-      status: "voting",
-      deadline: null,
-      started_at: "2025-01-01",
-      ended_at: null,
-    };
-    const video = {
-      id: "video-1",
-      room_id: "r1",
-      player_id: "p1",
-      tiktok_url: "https://www.tiktok.com/@alice/video/1",
-      video_url: "https://example.com/video.mp4",
-      video_urls: ["https://example.com/video.mp4"],
-      used: true,
-      created_at: "2025-01-01",
-    };
-
-    const supabase = {
-      from: vi.fn((table: string) => {
-        const responses = {
-          rooms: [{ data: room, error: null }],
-          players: [{ data: players, error: null }],
-          rounds: [{ data: round, error: null }],
-          videos: [{ data: video, error: null }],
-          votes: [
-            { data: null, error: null },
-            { data: null, error: null, count: 0 },
-          ],
-        } as const;
-
-        const queue = responses[table as keyof typeof responses];
-        const index = table === "votes" ? callIndex++ : 0;
-        return makeChain(queue?.[index] || { data: null, error: null });
-      }),
-      channel: vi.fn(() => ({
-        on: vi.fn().mockReturnThis(),
-        subscribe: vi.fn().mockReturnValue({}),
-      })),
-      removeChannel: vi.fn(),
-    };
+    const supabase = makeSupabaseMock({
+      room: makeRoom(),
+      players: [makePlayer()],
+      round: makeRound(),
+      video: makeVideo(),
+    });
 
     vi.mocked(createClient).mockReturnValue(supabase as never);
 
@@ -437,81 +275,14 @@ describe("GamePlayView", () => {
   });
 
   it("renders the sound control as tap to mute by default", async () => {
-    localStorage.setItem(
-      "tfulike_session",
-      JSON.stringify({ playerId: "p1", sessionToken: "token", roomPin: "1234" })
-    );
+    storeSession("p1", "1234");
 
-    let callIndex = 0;
-    const room = {
-      id: "r1",
-      pin: "1234",
-      status: "playing",
-      current_round: 1,
-      settings: { total_rounds: 3 },
-    };
-    const players = [
-      {
-        id: "p1",
-        room_id: "r1",
-        nickname: "Alice",
-        color: "#ff2d55",
-        session_token: "token",
-        is_host: true,
-        score: 0,
-        videos_ready: true,
-        tiktok_username: "alice",
-        sync_status: "synced",
-        sync_error: null,
-        synced_at: null,
-        created_at: "2025-01-01",
-      },
-    ];
-    const round = {
-      id: "round-1",
-      room_id: "r1",
-      round_number: 1,
-      video_id: "video-1",
-      correct_player_id: "p1",
-      status: "voting",
-      deadline: null,
-      started_at: "2025-01-01",
-      ended_at: null,
-    };
-    const video = {
-      id: "video-1",
-      room_id: "r1",
-      player_id: "p1",
-      tiktok_url: "https://www.tiktok.com/@alice/video/1",
-      video_url: "https://example.com/video.mp4",
-      video_urls: ["https://example.com/video.mp4"],
-      used: true,
-      created_at: "2025-01-01",
-    };
-
-    const supabase = {
-      from: vi.fn((table: string) => {
-        const responses = {
-          rooms: [{ data: room, error: null }],
-          players: [{ data: players, error: null }],
-          rounds: [{ data: round, error: null }],
-          videos: [{ data: video, error: null }],
-          votes: [
-            { data: null, error: null },
-            { data: null, error: null, count: 0 },
-          ],
-        } as const;
-
-        const queue = responses[table as keyof typeof responses];
-        const index = table === "votes" ? callIndex++ : 0;
-        return makeChain(queue?.[index] || { data: null, error: null });
-      }),
-      channel: vi.fn(() => ({
-        on: vi.fn().mockReturnThis(),
-        subscribe: vi.fn().mockReturnValue({}),
-      })),
-      removeChannel: vi.fn(),
-    };
+    const supabase = makeSupabaseMock({
+      room: makeRoom(),
+      players: [makePlayer()],
+      round: makeRound(),
+      video: makeVideo(),
+    });
 
     vi.mocked(createClient).mockReturnValue(supabase as never);
 
@@ -523,86 +294,19 @@ describe("GamePlayView", () => {
   });
 
   it("falls back to muted playback when autoplay with sound is blocked", async () => {
-    localStorage.setItem(
-      "tfulike_session",
-      JSON.stringify({ playerId: "p1", sessionToken: "token", roomPin: "1234" })
-    );
+    storeSession("p1", "1234");
 
     const playMock = vi
       .spyOn(window.HTMLMediaElement.prototype, "play")
       .mockRejectedValueOnce(new DOMException("Autoplay blocked", "NotAllowedError"))
       .mockResolvedValue(undefined);
 
-    let callIndex = 0;
-    const room = {
-      id: "r1",
-      pin: "1234",
-      status: "playing",
-      current_round: 1,
-      settings: { total_rounds: 3 },
-    };
-    const players = [
-      {
-        id: "p1",
-        room_id: "r1",
-        nickname: "Alice",
-        color: "#ff2d55",
-        session_token: "token",
-        is_host: true,
-        score: 0,
-        videos_ready: true,
-        tiktok_username: "alice",
-        sync_status: "synced",
-        sync_error: null,
-        synced_at: null,
-        created_at: "2025-01-01",
-      },
-    ];
-    const round = {
-      id: "round-1",
-      room_id: "r1",
-      round_number: 1,
-      video_id: "video-1",
-      correct_player_id: "p1",
-      status: "voting",
-      deadline: null,
-      started_at: "2025-01-01",
-      ended_at: null,
-    };
-    const video = {
-      id: "video-1",
-      room_id: "r1",
-      player_id: "p1",
-      tiktok_url: "https://www.tiktok.com/@alice/video/1",
-      video_url: "https://example.com/video.mp4",
-      video_urls: ["https://example.com/video.mp4"],
-      used: true,
-      created_at: "2025-01-01",
-    };
-
-    const supabase = {
-      from: vi.fn((table: string) => {
-        const responses = {
-          rooms: [{ data: room, error: null }],
-          players: [{ data: players, error: null }],
-          rounds: [{ data: round, error: null }],
-          videos: [{ data: video, error: null }],
-          votes: [
-            { data: null, error: null },
-            { data: null, error: null, count: 0 },
-          ],
-        } as const;
-
-        const queue = responses[table as keyof typeof responses];
-        const index = table === "votes" ? callIndex++ : 0;
-        return makeChain(queue?.[index] || { data: null, error: null });
-      }),
-      channel: vi.fn(() => ({
-        on: vi.fn().mockReturnThis(),
-        subscribe: vi.fn().mockReturnValue({}),
-      })),
-      removeChannel: vi.fn(),
-    };
+    const supabase = makeSupabaseMock({
+      room: makeRoom(),
+      players: [makePlayer()],
+      round: makeRound(),
+      video: makeVideo(),
+    });
 
     vi.mocked(createClient).mockReturnValue(supabase as never);
 
@@ -628,10 +332,7 @@ describe("GamePlayView", () => {
   });
 
   it("loads refreshed video playback sources through the extension data fetcher", async () => {
-    localStorage.setItem(
-      "tfulike_session",
-      JSON.stringify({ playerId: "p1", sessionToken: "token", roomPin: "1234" })
-    );
+    storeSession("p1", "1234");
 
     vi.mocked(checkExtensionPresent).mockResolvedValue("0.1.0");
     vi.mocked(requestVideoRefresh).mockResolvedValue({
@@ -639,81 +340,22 @@ describe("GamePlayView", () => {
       video_urls: ["https://v19-webapp-prime.tiktok.com/video/example.mp4?foo=bar"],
     });
 
-    let callIndex = 0;
-    const room = {
-      id: "r1",
-      pin: "1234",
-      status: "playing",
-      current_round: 1,
-      settings: { total_rounds: 3 },
-    };
-    const players = [
-      {
-        id: "p1",
-        room_id: "r1",
-        nickname: "Alice",
-        color: "#ff2d55",
-        session_token: "token",
-        is_host: true,
-        score: 0,
-        videos_ready: true,
-        tiktok_username: "alice",
-        sync_status: "synced",
-        sync_error: null,
-        synced_at: null,
-        created_at: "2025-01-01",
-      },
-    ];
-    const round = {
-      id: "round-1",
-      room_id: "r1",
-      round_number: 1,
-      video_id: "video-1",
-      correct_player_id: "p1",
-      status: "voting",
-      deadline: null,
-      started_at: "2025-01-01",
-      ended_at: null,
-    };
     const initialRawVideoUrl = "https://www.tiktok.com/video/expired.mp4?foo=bar";
     const refreshedRawVideoUrl =
       "https://v19-webapp-prime.tiktok.com/video/example.mp4?foo=bar";
     const initialDataUri = "blob:expired-video";
     const refreshedDataUri = "blob:refreshed-video";
-    const video = {
-      id: "video-1",
-      room_id: "r1",
-      player_id: "p1",
-      tiktok_url: "https://www.tiktok.com/@alice/video/1234567890",
-      video_url: initialRawVideoUrl,
-      video_urls: [initialRawVideoUrl],
-      used: true,
-      created_at: "2025-01-01",
-    };
 
-    const supabase = {
-      from: vi.fn((table: string) => {
-        const responses = {
-          rooms: [{ data: room, error: null }],
-          players: [{ data: players, error: null }],
-          rounds: [{ data: round, error: null }],
-          videos: [{ data: video, error: null }],
-          votes: [
-            { data: null, error: null },
-            { data: null, error: null, count: 0 },
-          ],
-        } as const;
-
-        const queue = responses[table as keyof typeof responses];
-        const index = table === "votes" ? callIndex++ : 0;
-        return makeChain(queue?.[index] || { data: null, error: null });
+    const supabase = makeSupabaseMock({
+      room: makeRoom(),
+      players: [makePlayer()],
+      round: makeRound(),
+      video: makeVideo({
+        tiktok_url: "https://www.tiktok.com/@alice/video/1234567890",
+        video_url: initialRawVideoUrl,
+        video_urls: [initialRawVideoUrl],
       }),
-      channel: vi.fn(() => ({
-        on: vi.fn().mockReturnThis(),
-        subscribe: vi.fn().mockReturnValue({}),
-      })),
-      removeChannel: vi.fn(),
-    };
+    });
 
     vi.mocked(createClient).mockReturnValue(supabase as never);
     vi.mocked(requestVideoDataUri)
@@ -743,13 +385,15 @@ describe("GamePlayView", () => {
       const refreshedVideoElement = container.querySelector('video:not([aria-hidden="true"])');
       expect(refreshedVideoElement?.getAttribute("src")).toBe(refreshedDataUri);
     });
+
+    expect(vi.mocked(requestVideoDataUri).mock.calls).toEqual([
+      [initialRawVideoUrl],
+      [refreshedRawVideoUrl],
+    ]);
   });
 
   it("never falls back to a raw TikTok URL after a video element error", async () => {
-    localStorage.setItem(
-      "tfulike_session",
-      JSON.stringify({ playerId: "p1", sessionToken: "token", roomPin: "1234" })
-    );
+    storeSession("p1", "1234");
 
     vi.mocked(checkExtensionPresent).mockResolvedValue("0.1.0");
     vi.mocked(requestVideoRefresh).mockResolvedValue({
@@ -757,81 +401,22 @@ describe("GamePlayView", () => {
       video_urls: ["https://v19-webapp-prime.tiktok.com/video/example.mp4?foo=bar"],
     });
 
-    let callIndex = 0;
-    const room = {
-      id: "r1",
-      pin: "1234",
-      status: "playing",
-      current_round: 1,
-      settings: { total_rounds: 3 },
-    };
-    const players = [
-      {
-        id: "p1",
-        room_id: "r1",
-        nickname: "Alice",
-        color: "#ff2d55",
-        session_token: "token",
-        is_host: true,
-        score: 0,
-        videos_ready: true,
-        tiktok_username: "alice",
-        sync_status: "synced",
-        sync_error: null,
-        synced_at: null,
-        created_at: "2025-01-01",
-      },
-    ];
-    const round = {
-      id: "round-1",
-      room_id: "r1",
-      round_number: 1,
-      video_id: "video-1",
-      correct_player_id: "p1",
-      status: "voting",
-      deadline: null,
-      started_at: "2025-01-01",
-      ended_at: null,
-    };
     const initialRawVideoUrl = "https://www.tiktok.com/video/expired.mp4?foo=bar";
     const refreshedRawVideoUrl =
       "https://v19-webapp-prime.tiktok.com/video/example.mp4?foo=bar";
     const initialDataUri = "blob:expired-video";
     const refreshedDataUri = "blob:refreshed-video";
-    const video = {
-      id: "video-1",
-      room_id: "r1",
-      player_id: "p1",
-      tiktok_url: "https://www.tiktok.com/@alice/video/1234567890",
-      video_url: initialRawVideoUrl,
-      video_urls: [initialRawVideoUrl],
-      used: true,
-      created_at: "2025-01-01",
-    };
 
-    const supabase = {
-      from: vi.fn((table: string) => {
-        const responses = {
-          rooms: [{ data: room, error: null }],
-          players: [{ data: players, error: null }],
-          rounds: [{ data: round, error: null }],
-          videos: [{ data: video, error: null }],
-          votes: [
-            { data: null, error: null },
-            { data: null, error: null, count: 0 },
-          ],
-        } as const;
-
-        const queue = responses[table as keyof typeof responses];
-        const index = table === "votes" ? callIndex++ : 0;
-        return makeChain(queue?.[index] || { data: null, error: null });
+    const supabase = makeSupabaseMock({
+      room: makeRoom(),
+      players: [makePlayer()],
+      round: makeRound(),
+      video: makeVideo({
+        tiktok_url: "https://www.tiktok.com/@alice/video/1234567890",
+        video_url: initialRawVideoUrl,
+        video_urls: [initialRawVideoUrl],
       }),
-      channel: vi.fn(() => ({
-        on: vi.fn().mockReturnThis(),
-        subscribe: vi.fn().mockReturnValue({}),
-      })),
-      removeChannel: vi.fn(),
-    };
+    });
 
     vi.mocked(createClient).mockReturnValue(supabase as never);
     vi.mocked(requestVideoDataUri)
@@ -855,6 +440,53 @@ describe("GamePlayView", () => {
     await waitFor(() => {
       const refreshedVideoElement = container.querySelector('video:not([aria-hidden="true"])');
       expect(refreshedVideoElement?.getAttribute("src")).toBe(refreshedDataUri);
+    });
+  });
+
+  it("does not remount the active video element when the same blob src is reused", async () => {
+    storeSession("p1", "1234");
+
+    const players = [
+      makePlayer(),
+      makePlayer({
+        id: "p2",
+        user_id: "auth-user-2",
+        nickname: "Bob",
+        color: "#007aff",
+        is_host: false,
+        tiktok_username: "bob",
+      }),
+    ];
+
+    const supabase = makeSupabaseMock({
+      room: makeRoom(),
+      players,
+      round: makeRound(),
+      video: makeVideo(),
+    });
+
+    vi.mocked(createClient).mockReturnValue(supabase as never);
+    vi.mocked(requestVideoDataUri).mockResolvedValue("blob:stable-video");
+
+    const { container, rerender } = render(
+      <GamePlayView lang="pl" pin="1234" dict={mockDict} />
+    );
+
+    const initialVideoElement = await waitFor(() => {
+      const element = container.querySelector(
+        'video:not([aria-hidden="true"])'
+      ) as HTMLVideoElement | null;
+      expect(element).not.toBeNull();
+      return element;
+    });
+
+    rerender(<GamePlayView lang="pl" pin="1234" dict={mockDict} />);
+
+    await waitFor(() => {
+      const currentVideoElement = container.querySelector(
+        'video:not([aria-hidden="true"])'
+      ) as HTMLVideoElement | null;
+      expect(currentVideoElement).toBe(initialVideoElement);
     });
   });
 });

@@ -1,64 +1,99 @@
-import { type NextRequest, NextResponse } from "next/server";
+import { createServerClient } from "@supabase/ssr";
+import { NextResponse, type NextRequest } from "next/server";
+import { locales, defaultLocale, type Locale } from "@/lib/i18n";
+import { match as matchLocale } from "@formatjs/intl-localematcher";
 import Negotiator from "negotiator";
-import { match } from "@formatjs/intl-localematcher";
-import { locales, defaultLocale } from "@/lib/i18n";
 
-function getLocale(request: NextRequest): string {
+function getPreferredLocale(request: NextRequest): Locale {
   const headers: Record<string, string> = {};
-  request.headers.forEach((value, key) => {
-    headers[key] = value;
+  request.headers.forEach((v, k) => {
+    headers[k] = v;
   });
-
-  const negotiated = new Negotiator({ headers }).languages();
-  const safeLanguages = negotiated
-    .map((lang) => lang.trim())
-    .filter((lang) => lang.length > 0 && lang !== "*")
-    .filter((lang) => {
-      try {
-        Intl.getCanonicalLocales(lang);
-        return true;
-      } catch {
-        return false;
-      }
-    });
-
+  const languages = new Negotiator({ headers }).languages();
   try {
-    return match(safeLanguages, [...locales], defaultLocale);
+    return matchLocale(languages, locales, defaultLocale) as Locale;
   } catch {
     return defaultLocale;
   }
 }
 
-export function proxy(request: NextRequest) {
+const PUBLIC_FILE_RE = /\.(.*)$/;
+const IGNORED_PREFIXES = ["/_next", "/api", "/auth", "/manifest", "/sw.js"];
+
+function shouldSkip(pathname: string) {
+  if (PUBLIC_FILE_RE.test(pathname)) return true;
+  return IGNORED_PREFIXES.some((p) => pathname.startsWith(p));
+}
+
+function getPathnameLocale(pathname: string): Locale | null {
+  const seg = pathname.split("/")[1];
+  return locales.includes(seg as Locale) ? (seg as Locale) : null;
+}
+
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Some browsers/extensions may request a locale-scoped manifest path.
-  // Normalize it to the root metadata route.
   const isLocalizedManifest = locales.some(
     (locale) => pathname === `/${locale}/manifest.webmanifest`
   );
-
   if (isLocalizedManifest) {
     const url = request.nextUrl.clone();
     url.pathname = "/manifest.webmanifest";
     return NextResponse.redirect(url);
   }
 
-  // Check if pathname already has a locale
-  const pathnameHasLocale = locales.some(
-    (locale) => pathname.startsWith(`/${locale}/`) || pathname === `/${locale}`
+  if (shouldSkip(pathname)) {
+    return NextResponse.next();
+  }
+
+  const pathnameLocale = getPathnameLocale(pathname);
+  if (!pathnameLocale) {
+    const locale = getPreferredLocale(request);
+    const url = request.nextUrl.clone();
+    url.pathname = `/${locale}${pathname}`;
+    return NextResponse.redirect(url);
+  }
+
+  const response = NextResponse.next({
+    request: { headers: request.headers },
+  });
+
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) => {
+            request.cookies.set(name, value);
+            response.cookies.set(name, value, options);
+          });
+        },
+      },
+    }
   );
 
-  if (pathnameHasLocale) return NextResponse.next();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  // Redirect to locale-prefixed path
-  const locale = getLocale(request);
-  request.nextUrl.pathname = `/${locale}${pathname}`;
-  return NextResponse.redirect(request.nextUrl);
+  const pathAfterLocale = pathname.replace(`/${pathnameLocale}`, "") || "/";
+  const isHome = pathAfterLocale === "/" || pathAfterLocale === "";
+
+  if (!user && !isHome) {
+    const url = request.nextUrl.clone();
+    url.pathname = `/${pathnameLocale}`;
+    return NextResponse.redirect(url);
+  }
+
+  return response;
 }
 
 export const config = {
   matcher: [
-    "/((?!_next|api|favicon.ico|manifest.json|manifest.webmanifest|sw.js|icons).*)",
+    "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|woff|woff2|ttf|eot)$).*)",
   ],
 };

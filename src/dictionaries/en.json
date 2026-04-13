@@ -102,5 +102,32 @@
     "playAgain": "Play Again",
     "newGame": "New Game",
     "rank": "Rank"
+  },
+  "auth": {
+    "signInWithGoogle": "Sign in with Google",
+    "signOut": "Sign out",
+    "error": "Sign-in failed. Please try again."
+  },
+  "onboarding": {
+    "step1Title": "Welcome!",
+    "step1Subtitle": "Let's set up your profile",
+    "nickname": "Your Nickname",
+    "nicknamePlaceholder": "Enter nickname...",
+    "pickColor": "Pick Your Color",
+    "next": "Next",
+    "step2Title": "Sync TikTok Likes",
+    "step2Subtitle": "We'll use your liked videos in the game",
+    "syncLikes": "Sync TikTok Likes",
+    "syncing": "Syncing...",
+    "synced": "Likes synced!",
+    "syncError": "Sync failed. Try again.",
+    "syncRetry": "Retry",
+    "skipSync": "Skip (no desktop Chrome)",
+    "desktopSyncHint": "Open TikTok in desktop Chrome with the tf u like? extension installed.",
+    "step3Title": "You're all set!",
+    "step3Subtitle": "Time to play",
+    "finish": "Let's go!",
+    "back": "Back",
+    "stepOf": "of"
   }
 }

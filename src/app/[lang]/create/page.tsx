@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { getDictionary } from "@/lib/dictionaries";
 import { isValidLocale } from "@/lib/i18n";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { CreateRoomForm } from "@/components/create-room-form";
+import { getUser, getProfile } from "@/lib/auth";
 
 export default async function CreatePage({
   params,
@@ -11,6 +12,13 @@ export default async function CreatePage({
 }) {
   const { lang } = await params;
   if (!isValidLocale(lang)) notFound();
+
+  const user = await getUser();
+  if (!user) redirect(`/${lang}`);
+
+  const profile = await getProfile();
+  if (!profile?.onboarding_completed) redirect(`/${lang}/onboarding`);
+
   const dict = await getDictionary(lang);
 
   return (
@@ -28,7 +36,7 @@ export default async function CreatePage({
       <h1 className="text-3xl font-bold mb-8">{dict.create.title}</h1>
 
       <div className="flex w-full flex-1 flex-col">
-        <CreateRoomForm lang={lang} dict={dict} />
+        <CreateRoomForm lang={lang} dict={dict} profile={profile} />
       </div>
     </main>
   );

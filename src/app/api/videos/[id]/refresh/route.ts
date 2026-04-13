@@ -19,10 +19,19 @@ export async function POST(
     const { id } = await params;
     const supabase = await createClient();
 
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const { data: video, error } = await supabase
       .from("videos")
-      .select("*")
+      .select("*, rooms!inner(id), players!inner(id, user_id)")
       .eq("id", id)
+      .eq("players.user_id", user.id)
       .single();
 
     if (error || !video) {

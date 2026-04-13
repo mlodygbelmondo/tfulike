@@ -1,21 +1,31 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 // POST /api/votes — Cast a vote
 // Owner CAN vote on their own video now
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { round_id, player_id, guessed_player_id } = body;
+    const { round_id, guessed_player_id } = body;
 
-    if (!round_id || !player_id || !guessed_player_id) {
+    if (!round_id || !guessed_player_id) {
       return NextResponse.json(
-        { error: "round_id, player_id, and guessed_player_id are required" },
+        { error: "round_id and guessed_player_id are required" },
         { status: 400 }
       );
     }
 
     const supabase = await createClient();
+    const adminSupabase = createAdminClient();
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
     // Verify round is in voting status
     const { data: round } = await supabase
@@ -31,10 +41,24 @@ export async function POST(request: Request) {
       );
     }
 
+    const { data: callerPlayer } = await supabase
+      .from("players")
+      .select("id")
+      .eq("room_id", round.room_id)
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (!callerPlayer) {
+      return NextResponse.json(
+        { error: "You are not a player in this room" },
+        { status: 403 }
+      );
+    }
+
     // Insert vote (unique constraint handles duplicates)
-    const { data: vote, error } = await supabase
+    const { data: vote, error } = await adminSupabase
       .from("votes")
-      .insert({ round_id, player_id, guessed_player_id })
+      .insert({ round_id, player_id: callerPlayer.id, guessed_player_id })
       .select()
       .single();
 
@@ -52,12 +76,12 @@ export async function POST(request: Request) {
     }
 
     // Check if all players have voted — if so, auto-trigger reveal
-    const { data: allPlayers } = await supabase
+    const { data: allPlayers } = await adminSupabase
       .from("players")
       .select("id")
       .eq("room_id", round.room_id);
 
-    const { count: voteCount } = await supabase
+    const { count: voteCount } = await adminSupabase
       .from("votes")
       .select("id", { count: "exact", head: true })
       .eq("round_id", round_id);

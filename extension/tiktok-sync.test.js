@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildLikedVideosUrl,
   buildUserDetailUrl,
+  extractUsernameFromUserDetail,
   extractSecUid,
   parseTikTokItem,
   summarizeResponseShape,
@@ -50,6 +51,24 @@ describe("extractSecUid", () => {
 
   it("returns null when the payload does not contain secUid", () => {
     expect(extractSecUid({ userInfo: { user: {} } })).toBeNull();
+  });
+});
+
+describe("extractUsernameFromUserDetail", () => {
+  it("returns the logged-in TikTok username from the standard user detail payload", () => {
+    expect(
+      extractUsernameFromUserDetail({
+        userInfo: {
+          user: {
+            uniqueId: "cool.user",
+          },
+        },
+      })
+    ).toBe("cool.user");
+  });
+
+  it("returns null when the payload does not contain a username", () => {
+    expect(extractUsernameFromUserDetail({ userInfo: { user: {} } })).toBeNull();
   });
 });
 

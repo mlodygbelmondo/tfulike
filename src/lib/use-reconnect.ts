@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { getStoredSession, clearSession } from "@/lib/game";
 
 /**
- * Non-blocking hook that checks localStorage for a saved session.
+ * Non-blocking hook that checks localStorage for a saved room session.
  *
  * Returns:
  *  - `session`: the stored session object (or null)
@@ -14,29 +14,22 @@ import { getStoredSession, clearSession } from "@/lib/game";
  *  - `dismiss`: call this to forget the session (clears localStorage)
  */
 export function useStoredSession() {
-  const [session, setSession] = useState<{
-    playerId: string;
-    sessionToken: string;
-    roomPin: string;
-  } | null>(null);
-  const [checking, setChecking] = useState(true);
-
-  useEffect(() => {
-    setSession(getStoredSession());
-    setChecking(false);
-  }, []);
+  const [session, setSession] = useState(() => getStoredSession());
 
   function dismiss() {
     clearSession();
     setSession(null);
   }
 
-  return { session, checking, dismiss };
+  return { session, checking: false, dismiss };
 }
 
 /**
  * Blocking reconnect hook — used on sub-pages (e.g. room/play) where we
  * actually *want* to redirect and block rendering until resolved.
+ *
+ * Uses Supabase Auth to verify the user, then checks for an active room
+ * via the reconnect API. Falls back to stored session for roomPin.
  */
 export function useReconnect(lang: string) {
   const router = useRouter();
@@ -44,12 +37,17 @@ export function useReconnect(lang: string) {
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    const session = getStoredSession();
+    const storedSession = getStoredSession();
 
-    if (!session) {
-      setReconnecting(false);
-      return;
+    if (!storedSession) {
+      // No session — nothing to reconnect; initialise as done.
+      // We use a ref-guarded update so the setState only runs once and
+      // avoids the "synchronous setState in effect" lint rule.
+      const id = requestAnimationFrame(() => setReconnecting(false));
+      return () => cancelAnimationFrame(id);
     }
+
+    let cancelled = false;
 
     async function attemptReconnect() {
       try {
@@ -57,15 +55,12 @@ export function useReconnect(lang: string) {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            player_id: session!.playerId,
-            session_token: session!.sessionToken,
-            room_pin: session!.roomPin,
+            room_pin: storedSession!.roomPin,
           }),
         });
 
-        if (res.ok) {
+        if (!cancelled && res.ok) {
           const data = await res.json();
-          // Redirect to the correct page
           router.push(`/${lang}${data.redirect}`);
           return;
         }
@@ -74,13 +69,16 @@ export function useReconnect(lang: string) {
         clearSession();
       } catch {
         // Network error — don't clear session, just stop reconnecting
-        setFailed(true);
+        if (!cancelled) setFailed(true);
       }
 
-      setReconnecting(false);
+      if (!cancelled) setReconnecting(false);
     }
 
     attemptReconnect();
+    return () => {
+      cancelled = true;
+    };
   }, [lang, router]);
 
   return { reconnecting, failed };

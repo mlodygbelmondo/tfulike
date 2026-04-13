@@ -14,12 +14,6 @@ interface RoundAssignment extends RoundOrderCandidate {
   plannedRoundNumber: number;
 }
 
-export interface StoredProfile {
-  nickname: string;
-  color: string;
-  tiktok: string;
-}
-
 /**
  * Validate a TikTok username or profile URL.
  * Accepts:
@@ -184,22 +178,14 @@ export function calculateRoundScores(
 }
 
 /**
- * Generate a session token for reconnection
+ * Session storage — stores which room the current user is in.
+ * With Supabase Auth, we no longer need session tokens or localStorage profiles.
+ * We only store playerId + roomPin for fast client-side reconnection.
  */
-export function generateSessionToken(): string {
-  return crypto.randomUUID();
-}
-
-/**
- * Session storage keys
- */
-export const PROFILE_KEY = "tfulike_profile";
-export const TIKTOK_PROFILE_KEY = "tfulike_tiktok";
 export const SESSION_KEY = "tfulike_session";
 
 export function getStoredSession(): {
   playerId: string;
-  sessionToken: string;
   roomPin: string;
 } | null {
   if (typeof window === "undefined") return null;
@@ -211,73 +197,12 @@ export function getStoredSession(): {
   }
 }
 
-export function storeSession(
-  playerId: string,
-  sessionToken: string,
-  roomPin: string
-) {
+export function storeSession(playerId: string, roomPin: string) {
   if (typeof window === "undefined") return;
-  localStorage.setItem(
-    SESSION_KEY,
-    JSON.stringify({ playerId, sessionToken, roomPin })
-  );
+  localStorage.setItem(SESSION_KEY, JSON.stringify({ playerId, roomPin }));
 }
 
 export function clearSession() {
   if (typeof window === "undefined") return;
   localStorage.removeItem(SESSION_KEY);
-}
-
-export function getStoredProfile(): StoredProfile | null {
-  if (typeof window === "undefined") return null;
-
-  try {
-    const raw = localStorage.getItem(PROFILE_KEY);
-    if (!raw) return null;
-
-    const profile = JSON.parse(raw) as Partial<StoredProfile>;
-    if (
-      typeof profile.nickname !== "string" ||
-      typeof profile.color !== "string" ||
-      typeof profile.tiktok !== "string"
-    ) {
-      return null;
-    }
-
-    return profile as StoredProfile;
-  } catch {
-    return null;
-  }
-}
-
-export function storeProfile(profile: StoredProfile) {
-  if (typeof window === "undefined") return;
-
-  localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
-  localStorage.setItem(TIKTOK_PROFILE_KEY, profile.tiktok);
-}
-
-export function clearProfile() {
-  if (typeof window === "undefined") return;
-
-  localStorage.removeItem(PROFILE_KEY);
-  localStorage.removeItem(TIKTOK_PROFILE_KEY);
-}
-
-/**
- * Store TikTok profile username in localStorage for reuse across sessions
- */
-export function getStoredTikTokProfile(): string | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const profile = getStoredProfile();
-    return profile?.tiktok || localStorage.getItem(TIKTOK_PROFILE_KEY);
-  } catch {
-    return null;
-  }
-}
-
-export function storeTikTokProfile(username: string) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(TIKTOK_PROFILE_KEY, username);
 }

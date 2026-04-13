@@ -22,12 +22,11 @@ export function RejoinBanner({
 
   async function handleRejoin() {
     try {
+      // Reconnect API now uses auth cookies — just send room_pin
       const res = await fetch("/api/rooms/reconnect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          player_id: session!.playerId,
-          session_token: session!.sessionToken,
           room_pin: session!.roomPin,
         }),
       });

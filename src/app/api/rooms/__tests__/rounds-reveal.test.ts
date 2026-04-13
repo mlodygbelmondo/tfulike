@@ -5,7 +5,20 @@ vi.mock("@/lib/supabase/server", () => ({
   createClient: vi.fn(),
 }));
 
+vi.mock("@/lib/supabase/admin", () => ({
+  createAdminClient: vi.fn(),
+}));
+
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+
+function makeAuthMock(userId: string | null) {
+  return {
+    getUser: vi.fn().mockResolvedValue({
+      data: { user: userId ? { id: userId } : null },
+    }),
+  };
+}
 
 function makeChain(resolveValue: { data: unknown; error: unknown }) {
   const chain: Record<string, unknown> = {};
@@ -29,30 +42,99 @@ function makeRequest(body: unknown) {
   });
 }
 
+function mockClients({
+  userId,
+  userResults,
+  adminResults,
+}: {
+  userId: string | null;
+  userResults?: Array<{ data: unknown; error: unknown }>;
+  adminResults?: Array<{ data: unknown; error: unknown }>;
+}) {
+  let userIdx = 0;
+  let adminIdx = 0;
+
+  vi.mocked(createClient).mockResolvedValue({
+    auth: makeAuthMock(userId),
+    from: vi.fn(() => {
+      const result = userResults?.[userIdx] ?? { data: null, error: null };
+      userIdx += 1;
+      return makeChain(result);
+    }),
+  } as never);
+
+  vi.mocked(createAdminClient).mockReturnValue({
+    from: vi.fn(() => {
+      const result = adminResults?.[adminIdx] ?? { data: null, error: null };
+      adminIdx += 1;
+      return makeChain(result);
+    }),
+  } as never);
+}
+
 const params = Promise.resolve({ pin: "1234" });
 
 describe("POST /api/rooms/[pin]/rounds/reveal", () => {
   beforeEach(() => vi.clearAllMocks());
 
+  it("returns 401 when user is not authenticated", async () => {
+    mockClients({ userId: null });
+
+    const res = await POST(makeRequest({}), { params });
+    expect(res.status).toBe(401);
+  });
+
   it("returns 404 when room not found", async () => {
-    const sb = {
-      from: vi.fn(() => makeChain({ data: null, error: { message: "not found" } })),
-    };
-    vi.mocked(createClient).mockResolvedValue(sb as never);
+    mockClients({
+      userId: "auth-host",
+      userResults: [{ data: null, error: { message: "not found" } }],
+    });
 
     const res = await POST(makeRequest({}), { params });
     expect(res.status).toBe(404);
   });
 
-  it("returns 403 when non-host tries to reveal", async () => {
+  it("returns 403 when non-host tries to reveal before all votes are in", async () => {
     const room = { id: "r1", pin: "1234", status: "playing", host_player_id: "host", current_round: 1 };
-    const sb = {
-      from: vi.fn(() => makeChain({ data: room, error: null })),
-    };
-    vi.mocked(createClient).mockResolvedValue(sb as never);
+    const round = { id: "round-1", room_id: "r1", round_number: 1, correct_player_id: "p1", status: "voting" };
+
+    mockClients({
+      userId: "auth-user-2",
+      userResults: [
+        { data: room, error: null },
+        { data: { id: "p2", user_id: "auth-user-2" }, error: null },
+        { data: round, error: null },
+      ],
+      adminResults: [
+        { data: [{ id: "host" }, { id: "p2" }], error: null },
+        { data: null, error: null },
+      ],
+    });
 
     const res = await POST(makeRequest({ player_id: "imposter" }), { params });
     expect(res.status).toBe(403);
+  });
+
+  it("ignores spoofed player_id and authorizes the authenticated host", async () => {
+    const room = { id: "r1", pin: "1234", status: "playing", host_player_id: "host", current_round: 1 };
+    const round = { id: "round-1", room_id: "r1", round_number: 1, correct_player_id: "p1", status: "voting" };
+
+    mockClients({
+      userId: "auth-host",
+      userResults: [
+        { data: room, error: null },
+        { data: { id: "host", user_id: "auth-host" }, error: null },
+        { data: round, error: null },
+      ],
+      adminResults: [
+        { data: [], error: null },
+        { data: [{ id: "round-1" }], error: null },
+        { data: [{ id: "host", score: 0 }], error: null },
+      ],
+    });
+
+    const res = await POST(makeRequest({ player_id: "spoofed" }), { params });
+    expect(res.status).toBe(200);
   });
 
   it("reveals scores successfully", async () => {
@@ -68,42 +150,29 @@ describe("POST /api/rooms/[pin]/rounds/reveal", () => {
       { id: "p3", score: 0 },
     ];
 
-    let idx = 0;
-    const results = [
-      // room lookup
-      { data: room, error: null },
-      // round lookup (voting)
-      { data: round, error: null },
-      // votes
-      { data: votes, error: null },
-      // update vote 1 is_correct
-      { data: null, error: null },
-      // update vote 2 is_correct
-      { data: null, error: null },
-      // fetch current players for score update
-      { data: [{ id: "p2", score: 0 }], error: null },
-      // update player score
-      { data: null, error: null },
-      // update round status
-      { data: null, error: null },
-      // get updated players
-      { data: players, error: null },
-    ];
-    const sb = {
-      from: vi.fn(() => {
-        const r = results[idx] || { data: null, error: null };
-        idx++;
-        return makeChain(r);
-      }),
-    };
-    vi.mocked(createClient).mockResolvedValue(sb as never);
+    mockClients({
+      userId: "auth-host",
+      userResults: [
+        { data: room, error: null },
+        { data: { id: "host", user_id: "auth-host" }, error: null },
+        { data: round, error: null },
+      ],
+      adminResults: [
+        { data: votes, error: null },
+        { data: null, error: null },
+        { data: null, error: null },
+        { data: [{ id: "p2", score: 0 }], error: null },
+        { data: null, error: null },
+        { data: [{ id: "round-1" }], error: null },
+        { data: players, error: null },
+      ],
+    });
 
     const res = await POST(makeRequest({ player_id: "host" }), { params });
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.correct_player_id).toBe("p1");
     expect(json.votes).toHaveLength(2);
-    expect(json.score_deltas).toBeDefined();
     expect(json.players).toHaveLength(3);
   });
 
@@ -111,27 +180,19 @@ describe("POST /api/rooms/[pin]/rounds/reveal", () => {
     const room = { id: "r1", pin: "1234", status: "playing", host_player_id: "host", current_round: 1 };
     const existingRound = { id: "round-1", room_id: "r1", round_number: 1, correct_player_id: "p1", status: "reveal" };
 
-    let idx = 0;
-    const results = [
-      // room lookup
-      { data: room, error: null },
-      // round lookup (no voting round found)
-      { data: null, error: { code: "PGRST116" } },
-      // fetch existing round
-      { data: existingRound, error: null },
-      // players
-      { data: [{ id: "p1", score: 5 }], error: null },
-      // votes
-      { data: [], error: null },
-    ];
-    const sb = {
-      from: vi.fn(() => {
-        const r = results[idx] || { data: null, error: null };
-        idx++;
-        return makeChain(r);
-      }),
-    };
-    vi.mocked(createClient).mockResolvedValue(sb as never);
+    mockClients({
+      userId: "auth-host",
+      userResults: [
+        { data: room, error: null },
+        { data: { id: "host", user_id: "auth-host" }, error: null },
+        { data: null, error: { code: "PGRST116" } },
+        { data: existingRound, error: null },
+      ],
+      adminResults: [
+        { data: [{ id: "p1", score: 5 }], error: null },
+        { data: [], error: null },
+      ],
+    });
 
     const res = await POST(makeRequest({ player_id: "host" }), { params });
     expect(res.status).toBe(200);
@@ -144,25 +205,22 @@ describe("POST /api/rooms/[pin]/rounds/reveal", () => {
     const round = { id: "round-1", room_id: "r1", round_number: 1, correct_player_id: "p1", status: "voting" };
     const votes = [{ id: "v1", player_id: "p2", guessed_player_id: "p1", created_at: "2025-01-01T00:00:00Z" }];
 
-    let idx = 0;
-    const results = [
-      { data: room, error: null },
-      { data: round, error: null },
-      { data: votes, error: null },
-      { data: null, error: null },
-      { data: [{ id: "p2", score: 0 }], error: null },
-      { data: null, error: null },
-      { data: [], error: null },
-      { data: [{ id: "p1", score: 0 }, { id: "p2", score: 10 }], error: null },
-    ];
-    const sb = {
-      from: vi.fn(() => {
-        const r = results[idx] || { data: null, error: null };
-        idx++;
-        return makeChain(r);
-      }),
-    };
-    vi.mocked(createClient).mockResolvedValue(sb as never);
+    mockClients({
+      userId: "auth-host",
+      userResults: [
+        { data: room, error: null },
+        { data: { id: "host", user_id: "auth-host" }, error: null },
+        { data: round, error: null },
+      ],
+      adminResults: [
+        { data: votes, error: null },
+        { data: null, error: null },
+        { data: [{ id: "p2", score: 0 }], error: null },
+        { data: null, error: null },
+        { data: [], error: null },
+        { data: [{ id: "p1", score: 0 }, { id: "p2", score: 10 }], error: null },
+      ],
+    });
 
     const res = await POST(makeRequest({ player_id: "host" }), { params });
     expect(res.status).toBe(200);

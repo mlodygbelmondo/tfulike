@@ -12,7 +12,6 @@ import Link from "next/link";
 import {
   checkExtensionPresent,
   requestExtensionSync,
-  getSyncFunctionUrl,
 } from "@/lib/extension";
 
 export function LobbyView({
@@ -52,6 +51,13 @@ export function LobbyView({
 
   const fetchData = useCallback(async () => {
     const supabase = createClient();
+
+    // Get the authenticated user to identify the current player
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    // Also check stored session for playerId as a fallback
     const session = getStoredSession();
 
     // Fetch room
@@ -92,13 +98,19 @@ export function LobbyView({
       .eq("room_id", roomData.id)
       .order("created_at");
 
-    setPlayers((playersData as Player[]) || []);
+    const roomPlayers = (playersData as Player[]) || [];
 
-    // Identify current player
-    if (session?.roomPin === pin && session.playerId) {
-      const me = playersData?.find(
-        (p: Player) => p.id === session.playerId
-      );
+    setPlayers(roomPlayers);
+
+    // Identify current player: prefer auth user_id match, fall back to stored playerId
+    if (roomPlayers.length > 0) {
+      let me: Player | undefined;
+      if (user) {
+        me = roomPlayers.find((p: Player) => p.user_id === user.id);
+      }
+      if (!me && session?.roomPin === pin && session.playerId) {
+        me = roomPlayers.find((p: Player) => p.id === session.playerId);
+      }
       if (me) {
         setCurrentPlayer(me as Player);
       }
@@ -107,42 +119,57 @@ export function LobbyView({
     setLoading(false);
   }, [pin, lang, router]);
 
+  const roomId = room?.id ?? null;
+
   useEffect(() => {
     fetchData();
 
     // Subscribe to realtime changes
     const supabase = createClient();
 
-    const channel = supabase
-      .channel(`room:${pin}`)
-      .on(
+    let channel = supabase.channel(`room:${pin}`).on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "rooms", filter: `pin=eq.${pin}` },
+      () => fetchData()
+    );
+
+    if (roomId) {
+      channel = channel.on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "players" },
+        { event: "*", schema: "public", table: "players", filter: `room_id=eq.${roomId}` },
         () => fetchData()
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "rooms" },
-        () => fetchData()
-      )
-      .subscribe();
+      );
+    }
+
+    channel.subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [fetchData, pin]);
+  }, [fetchData, pin, roomId]);
 
   async function handleRoundCountChange(count: number) {
     setSelectedRounds(count);
     if (!room) return;
 
-    const supabase = createClient();
-    await supabase
-      .from("rooms")
-      .update({
-        settings: { ...(room.settings as object), max_rounds: count },
-      })
-      .eq("id", room.id);
+    const res = await fetch(`/api/rooms/${pin}/settings`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ max_rounds: count }),
+    });
+
+    if (!res.ok) {
+      setError("Failed to update round count");
+      setSelectedRounds(
+        typeof room.settings?.max_rounds === "number" ? room.settings.max_rounds : null
+      );
+      return;
+    }
+
+    const data = await res.json();
+    if (data?.room) {
+      setRoom(data.room as Room);
+    }
   }
 
   async function handleSyncLikes() {
@@ -151,28 +178,48 @@ export function LobbyView({
       setError(dict.lobby.extensionNotFound);
       return;
     }
-    if (!currentPlayer.tiktok_username) {
-      setError(dict.lobby.addTiktokHint);
-      return;
-    }
 
     setSyncing(true);
     setError("");
 
     try {
-      const result = await requestExtensionSync({
-        player_id: currentPlayer.id,
-        room_id: room.id,
-        tiktok_username: currentPlayer.tiktok_username,
-        sync_function_url: getSyncFunctionUrl(),
-      });
+      const result = await requestExtensionSync({});
 
       if (!result.ok) {
         setError(result.error || dict.lobby.syncError);
+      } else if (result.tiktok_username) {
+        const syncResponse = await fetch("/api/profile/sync-likes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            tiktok_username: result.tiktok_username,
+            likes: result.likes ?? [],
+          }),
+        });
+
+        if (!syncResponse.ok) {
+          const data = await syncResponse.json().catch(() => ({}));
+          const detail = typeof data.detail === "string" && data.detail ? `: ${data.detail}` : "";
+          throw new Error(
+            `${typeof data.error === "string" && data.error ? data.error : dict.lobby.syncError}${detail}`
+          );
+        }
+
+        await fetch("/api/profile", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            tiktok_username: result.tiktok_username,
+            sync_status: "synced",
+          }),
+        });
+        await fetchData();
+      } else {
+        setError("TikTok username was not returned by the extension");
       }
-      // Realtime will pick up the player sync_status change
-    } catch {
-      setError(dict.lobby.syncError);
+      // The lobby reads sync state and username from profiles.
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : dict.lobby.syncError);
     } finally {
       setSyncing(false);
     }
@@ -246,7 +293,6 @@ export function LobbyView({
   const isHost = currentPlayer?.is_host;
   const allSynced = players.length >= 2 && players.every((p) => p.sync_status === "synced");
   const canStart = allSynced;
-  const myTikTokReady = !!currentPlayer?.tiktok_username;
   const mySyncStatus: SyncStatus = currentPlayer?.sync_status || "idle";
 
   return (
@@ -304,7 +350,7 @@ export function LobbyView({
       </div>
 
       {/* Sync button for current player */}
-      {currentPlayer && myTikTokReady && extensionChecked && (
+      {currentPlayer && extensionChecked && (
         <div className="w-full max-w-sm">
           {extensionVersion ? (
             <div className="space-y-2">
@@ -368,12 +414,6 @@ export function LobbyView({
         {players.length < 2 && (
           <p className="text-muted text-sm text-center">
             {dict.lobby.minPlayers}
-          </p>
-        )}
-
-        {!myTikTokReady && currentPlayer && (
-          <p className="text-accent text-sm text-center">
-            {dict.lobby.addTiktokHint}
           </p>
         )}
 

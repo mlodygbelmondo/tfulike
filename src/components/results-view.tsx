@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { PlayerAvatar } from "@/components/player-avatar";
-import { getStoredSession, clearSession } from "@/lib/game";
+import { clearSession } from "@/lib/game";
 import type { Player } from "@/lib/types";
 import type { Dictionary } from "@/lib/dictionaries";
 

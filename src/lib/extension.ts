@@ -1,15 +1,21 @@
 // Extension bridge: communicates with the tfulike Chrome extension via window.postMessage
 
 export interface ExtensionSyncRequest {
-  player_id: string;
-  room_id: string;
-  tiktok_username: string;
-  sync_function_url: string;
+  user_id?: string;
 }
 
 export interface ExtensionSyncResponse {
   ok: boolean;
-  synced_count?: number;
+  tiktok_username?: string;
+  likes?: Array<{
+    tiktok_video_id: string;
+    tiktok_url?: string;
+    video_url?: string;
+    video_urls?: string[];
+    author_username?: string;
+    description?: string;
+    cover_url?: string;
+  }>;
   error?: string;
 }
 
@@ -87,8 +93,8 @@ export function checkExtensionPresent(): Promise<string | null> {
 }
 
 /**
- * Request the extension to sync TikTok likes for a player.
- * Returns the result from the extension (which calls TikTok API + Edge Function).
+ * Request the extension to scrape TikTok likes for the authenticated user.
+ * Returns scraped TikTok data; the page persists it via Supabase.
  */
 export function requestExtensionSync(
   request: ExtensionSyncRequest
@@ -218,15 +224,4 @@ export function requestVideoDataUri(url: string): Promise<string> {
       "*"
     );
   });
-}
-
-/**
- * Build the Edge Function URL for sync-likes.
- */
-export function getSyncFunctionUrl(): string {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  if (!supabaseUrl) {
-    throw new Error("NEXT_PUBLIC_SUPABASE_URL not set");
-  }
-  return `${supabaseUrl}/functions/v1/sync-likes`;
 }

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { calculateRoundScores } from "@/lib/game";
 
 // POST /api/rooms/[pin]/rounds/reveal — Reveal answers and score
@@ -10,9 +11,16 @@ export async function POST(
 ) {
   try {
     const { pin } = await params;
-    const body = await request.json().catch(() => ({}));
-    const { player_id } = body as { player_id?: string };
     const supabase = await createClient();
+    const adminSupabase = createAdminClient();
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
     const { data: room } = await supabase
       .from("rooms")
@@ -23,6 +31,20 @@ export async function POST(
 
     if (!room) {
       return NextResponse.json({ error: "Room not found" }, { status: 404 });
+    }
+
+    const { data: callerPlayer } = await supabase
+      .from("players")
+      .select("id, user_id")
+      .eq("room_id", room.id)
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (!callerPlayer) {
+      return NextResponse.json(
+        { error: "You are not a player in this room" },
+        { status: 403 }
+      );
     }
 
     // Get current round
@@ -44,13 +66,13 @@ export async function POST(
         .single();
 
       if (existingRound && existingRound.status === "reveal") {
-        const { data: players } = await supabase
+        const { data: players } = await adminSupabase
           .from("players")
           .select("*")
           .eq("room_id", room.id)
           .order("score", { ascending: false });
 
-        const { data: votes } = await supabase
+        const { data: votes } = await adminSupabase
           .from("votes")
           .select("*")
           .eq("round_id", existingRound.id);
@@ -72,17 +94,16 @@ export async function POST(
     }
 
     // Authorization: host can always reveal; any player can reveal when all have voted
-    const isHost =
-      player_id && room.host_player_id && player_id === room.host_player_id;
+    const isHost = callerPlayer.id === room.host_player_id;
 
     if (!isHost) {
       // Check if all players have voted
-      const { data: allPlayers } = await supabase
+      const { data: allPlayers } = await adminSupabase
         .from("players")
         .select("id")
         .eq("room_id", room.id);
 
-      const { count: voteCount } = await supabase
+      const { count: voteCount } = await adminSupabase
         .from("votes")
         .select("id", { count: "exact", head: true })
         .eq("round_id", round.id);
@@ -99,7 +120,7 @@ export async function POST(
     }
 
     // Get all votes for this round
-    const { data: votes } = await supabase
+    const { data: votes } = await adminSupabase
       .from("votes")
       .select("*")
       .eq("round_id", round.id);
@@ -114,7 +135,7 @@ export async function POST(
     await Promise.all(
       (votes || []).map((vote) => {
         const isCorrect = vote.guessed_player_id === round.correct_player_id;
-        return supabase
+        return adminSupabase
           .from("votes")
           .update({ is_correct: isCorrect })
           .eq("id", vote.id);
@@ -124,7 +145,7 @@ export async function POST(
     // Batch: update player scores
     const playerIds = Array.from(scoreDeltas.keys());
     if (playerIds.length > 0) {
-      const { data: currentPlayers } = await supabase
+      const { data: currentPlayers } = await adminSupabase
         .from("players")
         .select("id, score")
         .in("id", playerIds);
@@ -132,7 +153,7 @@ export async function POST(
       await Promise.all(
         (currentPlayers || []).map((p) => {
           const delta = scoreDeltas.get(p.id) || 0;
-          return supabase
+          return adminSupabase
             .from("players")
             .update({ score: p.score + delta })
             .eq("id", p.id);
@@ -141,7 +162,7 @@ export async function POST(
     }
 
     // Update round status to reveal
-    const { data: revealedRounds } = await supabase
+    const { data: revealedRounds } = await adminSupabase
       .from("rounds")
       .update({ status: "reveal" })
       .eq("id", round.id)
@@ -149,7 +170,7 @@ export async function POST(
       .select("id");
 
     if (!revealedRounds || revealedRounds.length === 0) {
-      const { data: players } = await supabase
+      const { data: players } = await adminSupabase
         .from("players")
         .select("*")
         .eq("room_id", room.id)
@@ -166,7 +187,7 @@ export async function POST(
     }
 
     // Get updated players
-    const { data: players } = await supabase
+    const { data: players } = await adminSupabase
       .from("players")
       .select("*")
       .eq("room_id", room.id)

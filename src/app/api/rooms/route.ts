@@ -1,20 +1,41 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
-// POST /api/rooms — Create a new room
-export async function POST(request: Request) {
+// POST /api/rooms — Create a new room (requires auth)
+export async function POST() {
   try {
-    const body = await request.json();
-    const { nickname, color, tiktok_username } = body;
+    const supabase = await createClient();
+    const adminSupabase = createAdminClient();
 
-    if (!nickname?.trim() || !color || !tiktok_username?.trim()) {
+    // Require authenticated user
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Get profile for nickname, color and sync metadata.
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("nickname, color, tiktok_username, sync_status, synced_at, onboarding_completed")
+      .eq("id", user.id)
+      .single();
+
+    if (!profile) {
       return NextResponse.json(
-        { error: "Nickname, color, and TikTok username are required" },
+        { error: "Profile not found. Complete onboarding first." },
         { status: 400 }
       );
     }
 
-    const supabase = await createClient();
+    if (!profile.onboarding_completed) {
+      return NextResponse.json(
+        { error: "Complete onboarding first." },
+        { status: 400 }
+      );
+    }
 
     // Generate unique PIN
     const { data: pinData, error: pinError } = await supabase.rpc(
@@ -30,7 +51,7 @@ export async function POST(request: Request) {
     const pin = pinData as string;
 
     // Create room
-    const { data: room, error: roomError } = await supabase
+    const { data: room, error: roomError } = await adminSupabase
       .from("rooms")
       .insert({ pin, status: "lobby" })
       .select()
@@ -43,14 +64,17 @@ export async function POST(request: Request) {
       );
     }
 
-    // Create host player
-    const { data: player, error: playerError } = await supabase
+    // Create host player linked to auth user
+    const { data: player, error: playerError } = await adminSupabase
       .from("players")
       .insert({
         room_id: room.id,
-        nickname: nickname.trim(),
-        color,
-        tiktok_username: tiktok_username.trim(),
+        user_id: user.id,
+        nickname: profile.nickname,
+        color: profile.color,
+        tiktok_username: profile.tiktok_username,
+        sync_status: profile.sync_status,
+        synced_at: profile.synced_at,
         is_host: true,
       })
       .select()
@@ -64,7 +88,7 @@ export async function POST(request: Request) {
     }
 
     // Set host_player_id on room
-    await supabase
+    await adminSupabase
       .from("rooms")
       .update({ host_player_id: player.id })
       .eq("id", room.id);

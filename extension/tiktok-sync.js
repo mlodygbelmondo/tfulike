@@ -55,6 +55,10 @@ export function extractSecUid(data) {
   return data?.userInfo?.user?.secUid || data?.secUid || null;
 }
 
+export function extractUsernameFromUserDetail(data) {
+  return data?.userInfo?.user?.uniqueId || data?.user?.uniqueId || null;
+}
+
 export function summarizeResponseShape(data) {
   return {
     keys: Object.keys(data || {}).sort(),
