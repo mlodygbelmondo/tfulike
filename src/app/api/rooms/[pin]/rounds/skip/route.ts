@@ -81,7 +81,7 @@ async function buildSkipState(adminSupabase: ReturnType<typeof createAdminClient
 }
 
 async function ensureMutationSucceeded(
-  operation: Promise<{ error: { message?: string } | null }>,
+  operation: PromiseLike<{ error: { message?: string } | null }>,
   message: string
 ) {
   const { error } = await operation;
