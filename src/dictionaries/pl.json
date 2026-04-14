@@ -1,10 +1,10 @@
 {
   "app": {
-    "title": "tf u like?",
-    "description": "Imprezowa gra z TikTokami"
+    "title": "co ty kurwa lajkujesz?",
+    "description": "Zgadnij kto to polubił!"
   },
   "home": {
-    "subtitle": "Zgadnij czyj to TikTok!",
+    "subtitle": "Zgadnij kto to polubił!",
     "createRoom": "Stwórz Pokój",
     "joinRoom": "Dołącz do Pokoju",
     "or": "lub",
@@ -78,6 +78,7 @@
     "whoseTiktok": "Czyj to TikTok?",
     "voted": "Głos oddany!",
     "waiting": "Czekamy na głosy...",
+    "waitingForVotesFrom": "Czekamy na głosy od:",
     "reveal": "Odpowiedź to...",
     "correct": "Dobrze!",
     "wrong": "Źle!",
@@ -88,7 +89,22 @@
     "viewScores": "Zobacz Wyniki",
     "everyoneVoted": "Wszyscy zagłosowali!",
     "revealAnswer": "Pokaż Odpowiedź",
-    "skipToReveal": "Przejdź do Odpowiedzi"
+    "skipToReveal": "Przejdź do Odpowiedzi",
+    "skipVideo": "Pomiń wideo",
+    "undoSkip": "Cofnij pominięcie",
+    "skipVotes": "Głosy pominięcia: {count}/{total}",
+    "waitingForSkips": "Czekamy na pominięcie od:",
+    "soloEmpty": "Aby użyć trybu Solo, potrzebujesz zsynchronizowanych lajków TikToka z odtwarzalnymi URL-ami wideo.",
+    "soloLoading": "Ładowanie trybu Solo...",
+    "soloPrevious": "Poprzednie wideo",
+    "soloNext": "Następne wideo",
+    "soloOpenTikTok": "Otwórz na TikToku",
+    "soloDeleteSession": "Usuń sesję",
+    "soloDeletingSession": "Usuwanie...",
+    "soloHideControls": "Ukryj panel",
+    "soloShowControls": "Pokaż panel",
+    "soloModeHandsFree": "Tryb odtwarzania: Automatyczny",
+    "soloModeManual": "Tryb odtwarzania: Ręczny"
   },
   "scores": {
     "title": "Tabela Wyników",

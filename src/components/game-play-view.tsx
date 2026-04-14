@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { PlayerAvatar } from "@/components/player-avatar";
@@ -11,7 +11,7 @@ import {
   checkExtensionPresent,
   requestVideoDataUri,
 } from "@/lib/extension";
-import type { Player, Round, Video, RoomSettings } from "@/lib/types";
+import type { Player, Round, RoundSkip, Video, RoomSettings } from "@/lib/types";
 import type { Dictionary } from "@/lib/dictionaries";
 
 const VIDEO_DEBUG_STORAGE_KEY = "tfulike_debug_video";
@@ -79,6 +79,10 @@ type VideoFitMode = "cover" | "contain";
 
 const VIDEO_COVER_ASPECT_TOLERANCE = 0.14;
 
+function shouldTreatMetadataAsBroken(videoWidth: number, videoHeight: number) {
+  return videoWidth <= 0 || videoHeight <= 0;
+}
+
 interface RevealData {
   correct_player_id: string;
   votes: Array<{
@@ -113,6 +117,9 @@ export function GamePlayView({
   const [error, setError] = useState("");
   const [slotRevealing, setSlotRevealing] = useState(false);
   const [slotDone, setSlotDone] = useState(false);
+  const [scoreboardVisible, setScoreboardVisible] = useState(false);
+  const [revealRanking, setRevealRanking] = useState<Player[]>([]);
+  const [localRevealActive, setLocalRevealActive] = useState(false);
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
   const [videoFitMode, setVideoFitMode] = useState<VideoFitMode>("contain");
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -124,6 +131,8 @@ export function GamePlayView({
   const [videoResolving, setVideoResolving] = useState(false);
   const [revealSubmitting, setRevealSubmitting] = useState(false);
   const [nextRoundSubmitting, setNextRoundSubmitting] = useState(false);
+  const [skipSubmitting, setSkipSubmitting] = useState(false);
+  const [skipPlayerIds, setSkipPlayerIds] = useState<string[]>([]);
   const revealTriggeredRef = useRef(false);
   const videoElementRef = useRef<HTMLVideoElement | null>(null);
   const videoContainerRef = useRef<HTMLDivElement | null>(null);
@@ -142,6 +151,28 @@ export function GamePlayView({
     Array.isArray(video?.video_urls) ? video.video_urls.join("|") : "",
   ].join("::");
   const currentPlayerId = currentPlayer?.id ?? null;
+  const stablePlayers = useMemo(
+    () =>
+      [...players].sort((a, b) => {
+        const createdAtCompare = a.created_at.localeCompare(b.created_at);
+        if (createdAtCompare !== 0) return createdAtCompare;
+        return a.id.localeCompare(b.id);
+      }),
+    [players]
+  );
+  const votedPlayerIds = useMemo(() => {
+    if (!revealData?.votes) return new Set<string>();
+    return new Set(revealData.votes.map((vote) => vote.player_id));
+  }, [revealData?.votes]);
+  const waitingPlayers = useMemo(() => {
+    if (!votedFor || players.length === 0) return [];
+    return players.filter((player) => !votedPlayerIds.has(player.id));
+  }, [players, votedFor, votedPlayerIds]);
+  const waitingSkipPlayers = useMemo(() => {
+    if (skipPlayerIds.length === 0) return [];
+    return stablePlayers.filter((player) => !skipPlayerIds.includes(player.id));
+  }, [skipPlayerIds, stablePlayers]);
+  const currentPlayerSkipped = currentPlayerId ? skipPlayerIds.includes(currentPlayerId) : false;
 
   useEffect(() => {
     currentVideoIdRef.current = video?.id ?? null;
@@ -267,10 +298,33 @@ export function GamePlayView({
 
     if (fetchRoundTokenRef.current !== fetchToken) return;
 
-    if (existingVote) {
-      setVotedFor(existingVote.guessed_player_id);
+    const existingVoteGuess = Array.isArray(existingVote)
+      ? existingVote[0]?.guessed_player_id ?? null
+      : existingVote?.guessed_player_id ?? null;
+
+    if (existingVoteGuess) {
+      setVotedFor(existingVoteGuess);
     } else {
       setVotedFor(null);
+    }
+
+    const { data: votesData } = await supabase
+      .from("votes")
+      .select("player_id, guessed_player_id, is_correct")
+      .eq("round_id", roundData.id);
+
+    if (fetchRoundTokenRef.current !== fetchToken) return;
+
+    setRevealData((current) => ({
+      correct_player_id: current?.correct_player_id ?? roundData.correct_player_id ?? "",
+      votes: (votesData as RevealData["votes"]) ?? [],
+      score_deltas: current?.score_deltas ?? {},
+      players: current?.players ?? [],
+    }));
+
+    if (!existingVoteGuess && Array.isArray(votesData) && myPlayerId) {
+      const myVoteFromList = votesData.find((vote) => vote.player_id === myPlayerId);
+      setVotedFor(myVoteFromList?.guessed_player_id ?? null);
     }
 
     // Check vote count to determine if everyone voted
@@ -279,18 +333,27 @@ export function GamePlayView({
       .select("*", { count: "exact", head: true })
       .eq("round_id", roundData.id);
 
+    const { data: roundSkips } = await supabase
+      .from("round_skips")
+      .select("player_id")
+      .eq("round_id", roundData.id);
+
     if (fetchRoundTokenRef.current !== fetchToken) return;
 
     const playerCount = playersData?.length || 0;
     setAllVoted(!!voteCount && voteCount >= playerCount);
+    setSkipPlayerIds(((roundSkips as Pick<RoundSkip, "player_id">[] | null) ?? []).map((skip) => skip.player_id));
 
-    if (roundData.status === "voting") {
+    if (localRevealActive && roundData.status === "voting") {
+      setPhase("reveal");
+    } else if (roundData.status === "voting") {
       setPhase("voting");
       revealTriggeredRef.current = false;
     } else if (roundData.status === "reveal") {
       setPhase("reveal");
+      setLocalRevealActive(false);
     }
-  }, [pin, lang, router]);
+  }, [pin, lang, localRevealActive, router]);
 
   useEffect(() => {
     const rawCandidates = [
@@ -581,6 +644,24 @@ export function GamePlayView({
     attemptExtensionRefreshRef.current = attemptExtensionRefresh;
   }, [attemptExtensionRefresh]);
 
+  const advanceToNextVideoCandidate = useCallback(() => {
+    const nextIndex = videoCandidateIndex + 1;
+    if (nextIndex < videoCandidates.length) {
+      setVideoCandidateIndex(nextIndex);
+      return true;
+    }
+
+    if (!videoRefreshAttemptedRef.current) {
+      void attemptExtensionRefreshRef.current?.();
+      return true;
+    }
+
+    setVideoLoadFailed(true);
+    setVideoResolving(false);
+    setVideoSrc(null);
+    return false;
+  }, [videoCandidateIndex, videoCandidates.length]);
+
   useEffect(() => {
     const candidate = videoCandidates[videoCandidateIndex] || null;
     const resolveToken = videoResolveTokenRef.current + 1;
@@ -665,7 +746,31 @@ export function GamePlayView({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ player_id: currentPlayerId }),
-    }).then(() => fetchRound());
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          fetchRound();
+          return;
+        }
+
+        const data = await res.json();
+        setRevealData(data);
+        setRevealRanking((data.players as Player[]) || []);
+        setSlotRevealing(true);
+        setSlotDone(false);
+        setScoreboardVisible(false);
+        setLocalRevealActive(true);
+        setPhase("reveal");
+
+        setTimeout(() => {
+          setSlotRevealing(false);
+          setSlotDone(true);
+          setScoreboardVisible(true);
+        }, 2400);
+
+        fetchRound();
+      })
+      .catch(() => fetchRound());
   }, [phase, allVoted, pin, currentPlayerId, fetchRound]);
 
   // Realtime subscription
@@ -698,6 +803,16 @@ export function GamePlayView({
           schema: "public",
           table: "players",
           filter: `room_id=eq.${roomId}`,
+        },
+        () => fetchRound()
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "round_skips",
+          filter: `round_id=eq.${round?.id}`,
         },
         () => fetchRound()
       );
@@ -762,12 +877,16 @@ export function GamePlayView({
       const data = await res.json();
       if (res.ok) {
         setRevealData(data);
+        setRevealRanking((data.players as Player[]) || []);
         setSlotRevealing(true);
         setSlotDone(false);
+        setScoreboardVisible(false);
+        setLocalRevealActive(true);
         // Slot animation runs for ~2.4s, then settle
         setTimeout(() => {
           setSlotRevealing(false);
           setSlotDone(true);
+          setScoreboardVisible(true);
         }, 2400);
         setPhase("reveal");
       }
@@ -798,7 +917,11 @@ export function GamePlayView({
         setRevealData(null);
         setSlotRevealing(false);
         setSlotDone(false);
+        setScoreboardVisible(false);
+        setRevealRanking([]);
+        setLocalRevealActive(false);
         setAllVoted(false);
+        setSkipPlayerIds([]);
         fetchRound();
       }
     } catch {
@@ -808,25 +931,62 @@ export function GamePlayView({
     }
   }
 
+  async function handleSkipToggle() {
+    if (skipSubmitting) return;
+
+    setSkipSubmitting(true);
+    setError("");
+
+    try {
+      const method = currentPlayerSkipped ? "DELETE" : "POST";
+      const res = await fetch(`/api/rooms/${pin}/rounds/skip`, { method });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error ?? "Failed to update skip vote");
+        return;
+      }
+
+      fetchRoundTokenRef.current += 1;
+      setSkipPlayerIds(Array.isArray(data.skipped_player_ids) ? data.skipped_player_ids : []);
+
+      if (data.all_skipped) {
+        setVotedFor(null);
+        setRevealData(null);
+        setAllVoted(false);
+        revealTriggeredRef.current = false;
+        fetchRound();
+      }
+    } catch {
+      setError("Failed to update skip vote");
+    } finally {
+      setSkipSubmitting(false);
+    }
+  }
+
   // When phase transitions to reveal without explicit handleReveal (e.g. from realtime),
   // trigger slot animation
   useEffect(() => {
     if (phase === "reveal" && !slotRevealing && !slotDone && !revealData) {
       // Fetch reveal data from current round
       const fetchRevealData = async () => {
+        setScoreboardVisible(false);
+        setRevealRanking(players);
+        setLocalRevealActive(true);
         setSlotRevealing(true);
         setTimeout(() => {
           setSlotRevealing(false);
           setSlotDone(true);
+          setScoreboardVisible(true);
         }, 2400);
       };
       fetchRevealData();
     }
-  }, [phase, slotRevealing, slotDone, revealData]);
+  }, [phase, players, slotRevealing, slotDone, revealData]);
 
   if (phase === "loading") {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen gap-4 p-6">
+      <div className="relative left-1/2 flex h-dvh max-h-dvh w-screen -translate-x-1/2 flex-col items-center justify-center overflow-hidden gap-4 p-6">
         {/* Skeleton: round counter */}
         <div className="flex items-center justify-between w-full max-w-sm">
           <div className="h-4 w-20 bg-surface rounded animate-pulse" />
@@ -851,9 +1011,9 @@ export function GamePlayView({
   const isHost = currentPlayer?.is_host;
 
   return (
-    <main className="flex min-h-screen flex-col gap-4 p-4 animate-fade-in">
+    <main className="relative left-1/2 flex h-dvh max-h-dvh w-screen -translate-x-1/2 flex-col overflow-hidden bg-black text-white">
       {/* Round counter */}
-      <div className="flex items-center justify-between">
+      <div className="absolute inset-x-0 top-0 z-30 flex items-center justify-between px-4 pt-4">
         <span className="text-sm text-muted">
           {dict.game.round} {round?.round_number} {dict.game.of}{" "}
           {totalRounds}
@@ -868,7 +1028,7 @@ export function GamePlayView({
       {/* Video - MP4 playback */}
       <div
         ref={videoContainerRef}
-        className="relative flex-1 overflow-hidden rounded-2xl bg-surface"
+        className="relative flex h-full min-h-0 flex-1 items-center justify-center overflow-hidden bg-black"
       >
         {videoSrc ? (
           <>
@@ -876,7 +1036,7 @@ export function GamePlayView({
               aria-hidden="true"
               tabIndex={-1}
               src={videoSrc}
-              className="pointer-events-none absolute inset-0 block h-full w-full scale-110 object-cover blur-2xl"
+              className="pointer-events-none absolute inset-0 block h-full w-full scale-110 object-cover blur-3xl"
               autoPlay
               loop
               muted
@@ -890,8 +1050,8 @@ export function GamePlayView({
                 src={videoSrc}
                 className={
                   videoFitMode === "cover"
-                    ? "block h-full w-full object-cover object-center"
-                    : "block max-h-full max-w-full object-contain object-center"
+                    ? "relative z-10 block h-full w-full object-cover object-center"
+                    : "relative z-10 block h-full w-auto max-w-none object-contain object-center"
                 }
                 autoPlay
                 loop
@@ -912,10 +1072,18 @@ export function GamePlayView({
                 onLoadedMetadata={(event) => {
                   const element = event.currentTarget;
                   const container = videoContainerRef.current;
-                  const videoAspect =
-                    element.videoWidth > 0 && element.videoHeight > 0
-                      ? element.videoWidth / element.videoHeight
-                      : null;
+                 if (shouldTreatMetadataAsBroken(element.videoWidth, element.videoHeight)) {
+                   setVideoSrc(null);
+                   setVideoLoadFailed(false);
+                   setVideoResolving(true);
+                   advanceToNextVideoCandidate();
+                   return;
+                 }
+
+                 const videoAspect =
+                   element.videoWidth > 0 && element.videoHeight > 0
+                     ? element.videoWidth / element.videoHeight
+                     : null;
                   const containerAspect =
                     container && container.clientWidth > 0 && container.clientHeight > 0
                       ? container.clientWidth / container.clientHeight
@@ -968,27 +1136,14 @@ export function GamePlayView({
                     willAttemptRefresh: !videoRefreshAttempted,
                   });
 
-                  if (!videoRefreshAttempted) {
-                    setVideoSrc(null);
-                    attemptExtensionRefresh();
-                    return;
-                  }
-
-                  setVideoLoadFailed(true);
-                  setVideoSrc(null);
-                }}
-              />
+                   setVideoSrc(null);
+                   advanceToNextVideoCandidate();
+                 }}
+               />
             </div>
-            <button
-              type="button"
-              onClick={handleSoundToggle}
-              className="absolute right-3 top-3 z-20 rounded-full bg-black/70 px-3 py-1 text-xs font-medium text-white"
-            >
-              {soundEnabled ? "Tap to mute" : "Tap for sound"}
-            </button>
           </>
         ) : (
-          <div className="w-full h-full bg-surface rounded-2xl flex items-center justify-center p-4">
+          <div className="flex h-full w-full items-center justify-center p-4">
             <div className="text-center text-sm text-muted">
               {videoRefreshing ? (
                 <p className="animate-pulse">Refreshing video link...</p>
@@ -1020,26 +1175,34 @@ export function GamePlayView({
 
       {/* Voting */}
       {phase === "voting" && (
-        <div className="mt-auto flex flex-col gap-3 animate-slide-up">
-          <h2 className="text-lg font-bold text-center">
-            {dict.game.whoseTiktok}
-          </h2>
+        <div className="absolute inset-x-0 bottom-0 z-30 p-4 sm:p-6 animate-slide-up">
+          <div
+            data-testid="voting-dock"
+            className="mx-auto flex w-full max-w-5xl flex-col gap-3 rounded-3xl bg-black/60 p-3 backdrop-blur-md"
+          >
+            <h2 className="text-center text-lg font-bold">{dict.game.whoseTiktok}</h2>
 
-          {votedFor ? (
-            <div className="text-center py-4 animate-scale-in">
-              <p className="text-accent font-bold text-xl">{dict.game.voted}</p>
-              {!allVoted && (
-                <p className="text-muted text-sm mt-1">{dict.game.waiting}</p>
-              )}
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-2">
-              {players
-                .map((p) => (
+            {votedFor ? (
+              <div className="text-center py-3 animate-scale-in">
+                <p className="text-accent font-bold text-xl">{dict.game.voted}</p>
+                {!allVoted && (
+                  <>
+                    <p className="text-muted text-sm mt-1">{dict.game.waiting}</p>
+                    {waitingPlayers.length > 0 && (
+                      <p className="text-muted text-xs mt-1">
+                        {dict.game.waitingForVotesFrom} {waitingPlayers.map((p) => p.nickname).join(", ")}
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                {stablePlayers.map((p) => (
                   <button
                     key={p.id}
                     onClick={() => handleVote(p.id)}
-                    className="flex items-center gap-2 h-14 px-4 rounded-xl bg-surface border border-surface-2 transition-all active:scale-95 hover:border-accent hover:bg-surface-2"
+                    className="flex min-h-11 items-center gap-2 rounded-full border border-white/20 px-4 text-sm font-semibold text-white transition hover:border-white/40"
                   >
                     <PlayerAvatar
                       nickname={p.nickname}
@@ -1047,134 +1210,167 @@ export function GamePlayView({
                       size="sm"
                       showName={false}
                     />
-                    <span className="font-medium text-sm truncate">
-                      {p.nickname}
-                    </span>
+                    <span className="truncate">{p.nickname}</span>
                   </button>
                 ))}
-            </div>
-          )}
-
-          {/* Host can force reveal */}
-          {isHost && (
-              <button
-                onClick={handleReveal}
-                disabled={revealSubmitting}
-                className="h-12 rounded-xl bg-surface-2 text-muted font-medium text-sm transition-all active:scale-95"
-              >
-                {revealSubmitting ? "Loading..." : dict.game.skipToReveal}
-              </button>
+              </div>
             )}
+
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={handleSoundToggle}
+                className="min-h-11 rounded-full border border-white/20 px-4 text-sm font-semibold text-white transition hover:border-white/40"
+              >
+                {soundEnabled ? "Tap to mute" : "Tap for sound"}
+              </button>
+              <button
+                type="button"
+                onClick={handleSkipToggle}
+                disabled={skipSubmitting}
+                className="min-h-11 rounded-full border border-white/20 px-4 text-sm font-semibold text-white transition hover:border-white/40 disabled:opacity-40"
+              >
+                {currentPlayerSkipped ? dict.game.undoSkip : dict.game.skipVideo}
+              </button>
+              {isHost && (
+                <button
+                  onClick={handleReveal}
+                  disabled={revealSubmitting}
+                  className="min-h-11 rounded-full bg-white px-4 text-sm font-semibold text-black transition hover:bg-white/90"
+                >
+                  {revealSubmitting ? "Loading..." : dict.game.skipToReveal}
+                </button>
+              )}
+            </div>
+            {skipPlayerIds.length > 0 && (
+              <div className="text-center text-xs text-muted">
+                <p>{dict.game.skipVotes.replace("{count}", String(skipPlayerIds.length)).replace("{total}", String(stablePlayers.length))}</p>
+                {waitingSkipPlayers.length > 0 && (
+                  <p>
+                    {dict.game.waitingForSkips} {waitingSkipPlayers.map((player) => player.nickname).join(", ")}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
       {/* Reveal with slot-machine animation */}
       {phase === "reveal" && (
-        <div className="flex flex-col gap-4 items-center animate-fade-in">
-          <h2 className="text-lg font-bold">{dict.game.reveal}</h2>
-
-          {/* Slot-machine style reveal */}
-          {round?.correct_player_id && (
-            <div className="relative">
-              {slotRevealing ? (
-                <SlotMachineReveal
-                  players={players}
-                  correctPlayerId={round.correct_player_id}
-                />
-              ) : (
-                <div className={slotDone ? "animate-scale-in" : "animate-bounce-in"}>
-                  <div className="animate-glow-pulse rounded-full">
-                    <PlayerAvatar
-                      nickname={
-                        players.find((p) => p.id === round.correct_player_id)
-                          ?.nickname || "?"
-                      }
-                      color={
-                        players.find((p) => p.id === round.correct_player_id)
-                          ?.color || "#888"
-                      }
-                      size="lg"
+        <>
+          <div
+            data-testid="reveal-overlay"
+            className="absolute inset-0 z-40 flex items-center justify-center bg-black/40 backdrop-blur-md"
+          >
+            <div className="mx-auto flex w-full max-w-sm flex-col items-center gap-4 rounded-3xl border border-white/15 bg-black/55 p-6 text-center">
+              <h2 className="text-lg font-bold">{dict.game.reveal}</h2>
+              {round?.correct_player_id && (
+                <div className="relative">
+                  {slotRevealing ? (
+                    <SlotMachineReveal
+                      players={players}
+                      correctPlayerId={round.correct_player_id}
                     />
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Vote results */}
-          {revealData && !slotRevealing && (
-            <div className="w-full max-w-sm">
-              <div className="flex flex-col gap-2">
-                {revealData.votes.map((v, i) => {
-                  const voter = players.find((p) => p.id === v.player_id);
-                  const guessed = players.find(
-                    (p) => p.id === v.guessed_player_id
-                  );
-                  return (
-                    <div
-                      key={i}
-                      className={`flex items-center justify-between px-3 py-2 rounded-xl transition-all animate-slide-up ${
-                        v.is_correct
-                          ? "bg-green-900/30"
-                          : "bg-red-900/20"
-                      }`}
-                      style={{ animationDelay: `${i * 100}ms` }}
-                    >
-                      <span className="text-sm">
-                        {voter?.nickname} → {guessed?.nickname}
-                      </span>
-                      <span
-                        className={`text-xs font-bold ${
-                          v.is_correct ? "text-green-400" : "text-red-400"
-                        }`}
-                      >
-                        {v.is_correct ? dict.game.correct : dict.game.wrong}
-                      </span>
+                  ) : (
+                    <div className={slotDone ? "animate-scale-in" : "animate-bounce-in"}>
+                      <div className="animate-glow-pulse rounded-full">
+                        <PlayerAvatar
+                          nickname={
+                            players.find((p) => p.id === round.correct_player_id)
+                              ?.nickname || "?"
+                          }
+                          color={
+                            players.find((p) => p.id === round.correct_player_id)
+                              ?.color || "#888"
+                          }
+                          size="lg"
+                        />
+                      </div>
                     </div>
-                  );
-                })}
-              </div>
-
-              {/* Score changes */}
-              {Object.keys(revealData.score_deltas).length > 0 && (
-                <div className="mt-3 text-center animate-fade-in" style={{ animationDelay: "400ms" }}>
-                  {Object.entries(revealData.score_deltas).map(
-                    ([pid, delta]) => {
-                      const p = players.find((pl) => pl.id === pid);
-                      return (
-                        <span
-                          key={pid}
-                          className="text-sm text-accent inline-block mx-2"
-                        >
-                          {p?.nickname} +{delta} {dict.game.points}
-                        </span>
-                      );
-                    }
                   )}
                 </div>
               )}
+            </div>
+          </div>
 
-              {/* Nobody guessed */}
-              {revealData.votes.length > 0 &&
-                !revealData.votes.some((v) => v.is_correct) && (
-                  <p className="text-center text-accent mt-2 font-bold animate-scale-in">
-                    {dict.game.nobodyGuessed} {dict.game.stumpBonus}
-                  </p>
+          {scoreboardVisible && (
+            <div
+              data-testid="round-scoreboard"
+              className="absolute inset-x-0 bottom-0 z-50 p-4 sm:p-6"
+            >
+              <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 rounded-3xl bg-black/65 p-4 backdrop-blur-md animate-slide-up">
+                {revealData && (
+                  <div className="flex flex-col gap-2">
+                    {revealData.votes.map((v, i) => {
+                      const voter = players.find((p) => p.id === v.player_id);
+                      const guessed = players.find((p) => p.id === v.guessed_player_id);
+                      return (
+                        <div
+                          key={i}
+                          className={`flex items-center justify-between rounded-2xl px-3 py-2 transition-all animate-slide-up ${
+                            v.is_correct ? "bg-green-900/30" : "bg-red-900/20"
+                          }`}
+                          style={{ animationDelay: `${i * 90}ms` }}
+                        >
+                          <span className="text-sm">
+                            {voter?.nickname} {"->"} {guessed?.nickname}
+                          </span>
+                          <span
+                            className={`text-xs font-bold ${
+                              v.is_correct ? "text-green-400" : "text-red-400"
+                            }`}
+                          >
+                            {v.is_correct ? dict.game.correct : dict.game.wrong}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
+
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {revealRanking.map((player, index) => {
+                    const delta = revealData?.score_deltas[player.id] ?? 0;
+                    return (
+                      <div
+                        key={player.id}
+                        className="flex items-center justify-between rounded-2xl border border-white/15 bg-white/5 px-3 py-2 animate-fade-in"
+                        style={{ animationDelay: `${200 + index * 80}ms` }}
+                      >
+                        <span className="text-sm font-medium">
+                          #{index + 1} {player.nickname}
+                        </span>
+                        <span className="text-sm font-bold text-accent">
+                          {delta > 0 ? `+${delta} ` : ""}
+                          {player.score} {dict.game.points}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {revealData &&
+                  revealData.votes.length > 0 &&
+                  !revealData.votes.some((v) => v.is_correct) && (
+                    <p className="text-center text-accent font-bold animate-scale-in">
+                      {dict.game.nobodyGuessed} {dict.game.stumpBonus}
+                    </p>
+                  )}
+
+                {isHost && (
+                  <button
+                    onClick={handleNextRound}
+                    disabled={nextRoundSubmitting}
+                    className="min-h-11 self-center rounded-full bg-white px-6 text-sm font-semibold text-black transition hover:bg-white/90"
+                  >
+                    {nextRoundSubmitting ? "Loading..." : dict.game.nextRound}
+                  </button>
+                )}
+              </div>
             </div>
           )}
-
-          {/* Next round */}
-          {isHost && !slotRevealing && (
-            <button
-              onClick={handleNextRound}
-              disabled={nextRoundSubmitting}
-              className="h-14 w-full max-w-sm rounded-2xl bg-accent text-white font-bold text-lg transition-transform active:scale-95"
-            >
-              {nextRoundSubmitting ? "Loading..." : dict.game.nextRound}
-            </button>
-          )}
-        </div>
+        </>
       )}
 
       {error && (

@@ -46,27 +46,24 @@ function makeSupabaseMock(overrides: {
   players: Record<string, unknown>[];
   round: Record<string, unknown>;
   video: Record<string, unknown>;
+  votes?: Array<{ player_id: string; guessed_player_id: string }>;
 }) {
-  let votesCallIndex = 0;
   const authGetUser = vi.fn().mockResolvedValue({ data: { user: makeAuthUser() } });
 
   const supabase = {
     auth: { getUser: authGetUser },
     from: vi.fn((table: string) => {
-      const responses: Record<string, Array<{ data: unknown; error: unknown; count?: number | null }>> = {
-        rooms: [{ data: overrides.room, error: null }],
-        players: [{ data: overrides.players, error: null }],
-        rounds: [{ data: overrides.round, error: null }],
-        videos: [{ data: overrides.video, error: null }],
-        votes: [
-          { data: null, error: null },
-          { data: null, error: null, count: 0 },
-        ],
+      const responses: Record<string, { data: unknown; error: unknown; count?: number | null }> = {
+        rooms: { data: overrides.room, error: null },
+        players: { data: overrides.players, error: null },
+        rounds: { data: overrides.round, error: null },
+        videos: { data: overrides.video, error: null },
+        votes: { data: overrides.votes ?? [], error: null },
       };
 
-      const queue = responses[table];
-      const index = table === "votes" ? votesCallIndex++ : 0;
-      return makeChain(queue?.[index] || { data: null, error: null });
+      return makeChain(
+        responses[table] || { data: null, error: null }
+      );
     }),
     channel: vi.fn(() => ({
       on: vi.fn().mockReturnThis(),
@@ -230,8 +227,9 @@ describe("GamePlayView", () => {
         'video:not([aria-hidden="true"])'
       ) as HTMLVideoElement | null;
       expect(videoElement).not.toBeNull();
-      expect(videoElement?.className).toContain("max-h-full");
-      expect(videoElement?.className).toContain("max-w-full");
+      expect(videoElement?.className).toContain("h-full");
+      expect(videoElement?.className).toContain("w-auto");
+      expect(videoElement?.className).toContain("max-w-none");
       expect(videoElement?.className).not.toContain("h-full w-full");
       expect(videoElement?.parentElement?.className).toContain("absolute inset-0");
       expect(videoElement?.parentElement?.className).toContain("place-items-center");
@@ -487,6 +485,345 @@ describe("GamePlayView", () => {
         'video:not([aria-hidden="true"])'
       ) as HTMLVideoElement | null;
       expect(currentVideoElement).toBe(initialVideoElement);
+    });
+  });
+
+  it("renders fullscreen stage with voting controls docked in bottom bar", async () => {
+    storeSession("p1", "1234");
+
+    const players = [
+      makePlayer(),
+      makePlayer({
+        id: "p2",
+        user_id: "auth-user-2",
+        nickname: "Bob",
+        color: "#007aff",
+        is_host: false,
+        tiktok_username: "bob",
+      }),
+    ];
+
+    const supabase = makeSupabaseMock({
+      room: makeRoom(),
+      players,
+      round: makeRound(),
+      video: makeVideo(),
+    });
+
+    vi.mocked(createClient).mockReturnValue(supabase as never);
+
+    const { container } = render(<GamePlayView lang="pl" pin="1234" dict={mockDict} />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Alice/i })).toBeInTheDocument();
+    });
+
+    const main = container.querySelector("main");
+    expect(main?.className).toContain("h-dvh");
+    expect(main?.className).toContain("w-screen");
+
+    const votingDock = screen.getByTestId("voting-dock");
+    expect(votingDock.className).toContain("rounded-3xl");
+    expect(votingDock.className).toContain("backdrop-blur-md");
+  });
+
+  it("shows reveal overlay first, then animated round scoreboard", async () => {
+    storeSession("p1", "1234");
+
+    const nativeSetTimeout = global.setTimeout;
+    const setTimeoutSpy = vi
+      .spyOn(global, "setTimeout")
+      .mockImplementation(((handler: TimerHandler, timeout?: number, ...args: unknown[]) => {
+        if (timeout === 2400) {
+          return nativeSetTimeout(handler, 0, ...args);
+        }
+        return nativeSetTimeout(handler, timeout, ...args);
+      }) as typeof setTimeout);
+
+    const players = [
+      makePlayer(),
+      makePlayer({
+        id: "p2",
+        user_id: "auth-user-2",
+        nickname: "Bob",
+        color: "#007aff",
+        is_host: false,
+        tiktok_username: "bob",
+      }),
+    ];
+
+    const supabase = makeSupabaseMock({
+      room: makeRoom(),
+      players,
+      round: makeRound(),
+      video: makeVideo(),
+    });
+
+    vi.mocked(createClient).mockReturnValue(supabase as never);
+
+    const fetchSpy = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/rounds/reveal")) {
+        return {
+          ok: true,
+          json: async () => ({
+            correct_player_id: "p1",
+            votes: [
+              { player_id: "p1", guessed_player_id: "p1", is_correct: true },
+              { player_id: "p2", guessed_player_id: "p1", is_correct: true },
+            ],
+            score_deltas: { p1: 12, p2: 10 },
+            players: [
+              { ...players[0], score: 12 },
+              { ...players[1], score: 10 },
+            ],
+          }),
+        } as Response;
+      }
+
+      return {
+        ok: true,
+        json: async () => ({}),
+      } as Response;
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      fetchSpy
+    );
+
+    render(<GamePlayView lang="pl" pin="1234" dict={mockDict} />);
+
+    const revealButton = await screen.findByRole("button", {
+      name: /skip to reveal/i,
+    });
+    fireEvent.click(revealButton);
+
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledWith(
+        expect.stringContaining("/rounds/reveal"),
+        expect.objectContaining({ method: "POST" })
+      );
+    });
+    expect(await screen.findByTestId("reveal-overlay")).toBeInTheDocument();
+
+    try {
+      expect(await screen.findByTestId("round-scoreboard")).toBeInTheDocument();
+      expect(screen.getByText(/#1 Alice/i)).toBeInTheDocument();
+      expect(screen.getByText(/#2 Bob/i)).toBeInTheDocument();
+    } finally {
+      setTimeoutSpy.mockRestore();
+    }
+  }, 15000);
+
+  it("shows who is still missing a vote after you already voted", async () => {
+    storeSession("p1", "1234");
+
+    const players = [
+      makePlayer(),
+      makePlayer({
+        id: "p2",
+        user_id: "auth-user-2",
+        nickname: "Bob",
+        color: "#007aff",
+        is_host: false,
+        tiktok_username: "bob",
+      }),
+      makePlayer({
+        id: "p3",
+        user_id: "auth-user-3",
+        nickname: "Cara",
+        color: "#34c759",
+        is_host: false,
+        tiktok_username: "cara",
+      }),
+    ];
+
+    const supabase = makeSupabaseMock({
+      room: makeRoom(),
+      players,
+      round: makeRound(),
+      video: makeVideo(),
+      votes: [
+        { player_id: "p1", guessed_player_id: "p2" },
+        { player_id: "p2", guessed_player_id: "p1" },
+      ],
+    });
+
+    vi.mocked(createClient).mockReturnValue(supabase as never);
+
+    render(<GamePlayView lang="pl" pin="1234" dict={mockDict} />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/vote locked/i)).toBeInTheDocument();
+      expect(screen.getByText(/waiting for votes from:/i)).toBeInTheDocument();
+      expect(screen.getByText(/Cara/i)).toBeInTheDocument();
+    });
+  });
+
+  it("keeps the player choice order stable even when scores change", async () => {
+    storeSession("p1", "1234");
+
+    const players = [
+      makePlayer({ id: "p1", nickname: "Alice", score: 0, created_at: "2025-01-01T00:00:00Z" }),
+      makePlayer({
+        id: "p2",
+        user_id: "auth-user-2",
+        nickname: "Bob",
+        color: "#007aff",
+        is_host: false,
+        score: 30,
+        created_at: "2025-01-01T00:00:01Z",
+        tiktok_username: "bob",
+      }),
+      makePlayer({
+        id: "p3",
+        user_id: "auth-user-3",
+        nickname: "Cara",
+        color: "#34c759",
+        is_host: false,
+        score: 10,
+        created_at: "2025-01-01T00:00:02Z",
+        tiktok_username: "cara",
+      }),
+    ];
+
+    const supabase = makeSupabaseMock({
+      room: makeRoom(),
+      players,
+      round: makeRound(),
+      video: makeVideo(),
+    });
+
+    vi.mocked(createClient).mockReturnValue(supabase as never);
+
+    render(<GamePlayView lang="pl" pin="1234" dict={mockDict} />);
+
+    const votingDock = await screen.findByTestId("voting-dock");
+    const labels = Array.from(votingDock.querySelectorAll("span.truncate")).map((element) =>
+      element.textContent?.trim()
+    );
+
+    expect(labels).toEqual([
+      "Alice",
+      "Bob",
+      "Cara",
+    ]);
+  });
+
+  it("shows skip consensus state and remaining players before a unanimous skip", async () => {
+    storeSession("p1", "1234");
+
+    const players = [
+      makePlayer({ id: "p1", nickname: "Alice", created_at: "2025-01-01T00:00:00Z" }),
+      makePlayer({
+        id: "p2",
+        user_id: "auth-user-2",
+        nickname: "Bob",
+        color: "#007aff",
+        is_host: false,
+        created_at: "2025-01-01T00:00:01Z",
+        tiktok_username: "bob",
+      }),
+      makePlayer({
+        id: "p3",
+        user_id: "auth-user-3",
+        nickname: "Cara",
+        color: "#34c759",
+        is_host: false,
+        created_at: "2025-01-01T00:00:02Z",
+        tiktok_username: "cara",
+      }),
+    ];
+
+    const supabase = makeSupabaseMock({
+      room: makeRoom(),
+      players,
+      round: makeRound(),
+      video: makeVideo(),
+    });
+
+    vi.mocked(createClient).mockReturnValue(supabase as never);
+
+    const fetchSpy = vi.fn().mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/rounds/skip") && init?.method === "POST") {
+        return {
+          ok: true,
+          json: async () => ({
+            all_skipped: false,
+            finished: false,
+            skip_count: 1,
+            player_count: 3,
+            skipped_player_ids: ["p1"],
+          }),
+        } as Response;
+      }
+
+      return {
+        ok: true,
+        json: async () => ({}),
+      } as Response;
+    });
+
+    vi.stubGlobal("fetch", fetchSpy);
+
+    render(<GamePlayView lang="pl" pin="1234" dict={mockDict} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /skip video/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /undo skip/i })).toBeInTheDocument();
+      expect(screen.getByText(/skip votes: 1\/3/i)).toBeInTheDocument();
+      expect(screen.getByText(/waiting for skips from:\s*bob, cara/i)).toBeInTheDocument();
+    });
+  });
+
+  it("retries a different video candidate when metadata loads with no image dimensions", async () => {
+    storeSession("p1", "1234");
+
+    const supabase = makeSupabaseMock({
+      room: makeRoom(),
+      players: [makePlayer()],
+      round: makeRound(),
+      video: makeVideo({
+        video_url: "https://example.com/video-a.mp4",
+        video_urls: ["https://example.com/video-a.mp4", "https://example.com/video-b.mp4"],
+      }),
+    });
+
+    vi.mocked(createClient).mockReturnValue(supabase as never);
+    vi.mocked(requestVideoDataUri)
+      .mockResolvedValueOnce("blob:video-a")
+      .mockResolvedValueOnce("blob:video-b");
+
+    const { container } = render(<GamePlayView lang="pl" pin="1234" dict={mockDict} />);
+
+    const videoElement = await waitFor(() => {
+      const element = container.querySelector(
+        'video:not([aria-hidden="true"])'
+      ) as HTMLVideoElement | null;
+      expect(element).not.toBeNull();
+      return element;
+    });
+
+    Object.defineProperty(videoElement as HTMLVideoElement, "videoWidth", {
+      configurable: true,
+      get: () => 0,
+    });
+    Object.defineProperty(videoElement as HTMLVideoElement, "videoHeight", {
+      configurable: true,
+      get: () => 0,
+    });
+
+    fireEvent.loadedMetadata(videoElement as HTMLVideoElement);
+
+    await waitFor(() => {
+      expect(requestVideoDataUri).toHaveBeenNthCalledWith(2, "https://example.com/video-b.mp4");
+      const refreshedVideo = container.querySelector(
+        'video:not([aria-hidden="true"])'
+      ) as HTMLVideoElement | null;
+      expect(refreshedVideo?.getAttribute("src")).toBe("blob:video-b");
     });
   });
 });

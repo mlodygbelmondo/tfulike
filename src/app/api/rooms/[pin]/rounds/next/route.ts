@@ -87,6 +87,7 @@ export async function POST(
       .from("videos")
       .select("id, player_id, tiktok_url, video_url, video_urls, planned_round_number")
       .eq("room_id", room.id)
+      .eq("used", false)
       .eq("planned_round_number", nextRoundNum)
       .maybeSingle();
 

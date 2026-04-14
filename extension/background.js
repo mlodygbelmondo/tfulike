@@ -311,6 +311,9 @@ async function refreshSingleVideoInPage(videoId) {
       }
     };
 
+    pushUrl(item.video?.playAddr);
+    pushUrl(item.video?.downloadAddr);
+
     if (Array.isArray(item.video.bitrateInfo)) {
       for (const bitrate of item.video.bitrateInfo) {
         if (Array.isArray(bitrate?.PlayAddr?.UrlList)) {
@@ -320,9 +323,6 @@ async function refreshSingleVideoInPage(videoId) {
         }
       }
     }
-
-    pushUrl(item.video?.playAddr);
-    pushUrl(item.video?.downloadAddr);
 
     if (videoUrls.length === 0) {
       return {
@@ -599,6 +599,9 @@ async function scrapeTikTokLikesInPage() {
       }
     };
 
+    pushUrl(item.video?.playAddr);
+    pushUrl(item.video?.downloadAddr);
+
     if (Array.isArray(item.video?.bitrateInfo)) {
       for (const bitrate of item.video.bitrateInfo) {
         if (Array.isArray(bitrate?.PlayAddr?.UrlList)) {
@@ -608,9 +611,6 @@ async function scrapeTikTokLikesInPage() {
         }
       }
     }
-
-    pushUrl(item.video?.playAddr);
-    pushUrl(item.video?.downloadAddr);
 
     return {
       tiktok_video_id: videoId,
