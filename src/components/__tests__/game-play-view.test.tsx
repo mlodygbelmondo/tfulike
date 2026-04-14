@@ -12,11 +12,13 @@ vi.mock("@/lib/extension", () => ({
   checkExtensionPresent: vi.fn(() => Promise.resolve(null)),
   requestVideoRefresh: vi.fn(),
   requestVideoDataUri: vi.fn(),
+  requestMediaDataUri: vi.fn(),
 }));
 
 import { createClient } from "@/lib/supabase/client";
 import {
   checkExtensionPresent,
+  requestMediaDataUri,
   requestVideoRefresh,
   requestVideoDataUri,
 } from "@/lib/extension";
@@ -46,8 +48,10 @@ function makeSupabaseMock(overrides: {
   players: Record<string, unknown>[];
   round: Record<string, unknown>;
   video: Record<string, unknown>;
+  prefetchedVideo?: Record<string, unknown> | null;
 }) {
   let votesCallIndex = 0;
+  let videosCallIndex = 0;
   const authGetUser = vi.fn().mockResolvedValue({ data: { user: makeAuthUser() } });
 
   const supabase = {
@@ -57,7 +61,10 @@ function makeSupabaseMock(overrides: {
         rooms: [{ data: overrides.room, error: null }],
         players: [{ data: overrides.players, error: null }],
         rounds: [{ data: overrides.round, error: null }],
-        videos: [{ data: overrides.video, error: null }],
+        videos: [
+          { data: overrides.video, error: null },
+          { data: overrides.prefetchedVideo ?? null, error: null },
+        ],
         votes: [
           { data: null, error: null },
           { data: null, error: null, count: 0 },
@@ -65,9 +72,14 @@ function makeSupabaseMock(overrides: {
       };
 
       const queue = responses[table];
-      const index = table === "votes" ? votesCallIndex++ : 0;
-      return makeChain(queue?.[index] || { data: null, error: null });
-    }),
+        const index =
+          table === "votes"
+            ? votesCallIndex++
+            : table === "videos"
+              ? videosCallIndex++
+              : 0;
+        return makeChain(queue?.[index] || { data: null, error: null });
+      }),
     channel: vi.fn(() => ({
       on: vi.fn().mockReturnThis(),
       subscribe: vi.fn().mockReturnValue({}),
@@ -104,17 +116,18 @@ function makePlayer(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
-function makeRoom() {
+function makeRoom(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: "r1",
     pin: "1234",
     status: "playing",
     current_round: 1,
     settings: { total_rounds: 3 },
+    ...overrides,
   };
 }
 
-function makeRound() {
+function makeRound(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: "round-1",
     room_id: "r1",
@@ -125,6 +138,7 @@ function makeRound() {
     deadline: null,
     started_at: "2025-01-01",
     ended_at: null,
+    ...overrides,
   };
 }
 
@@ -134,8 +148,12 @@ function makeVideo(overrides: Partial<Record<string, unknown>> = {}) {
     room_id: "r1",
     player_id: "p1",
     tiktok_url: "https://www.tiktok.com/@alice/video/1",
+    media_type: "video",
     video_url: "https://example.com/video.mp4",
     video_urls: ["https://example.com/video.mp4"],
+    image_urls: [],
+    audio_url: null,
+    cover_url: null,
     used: true,
     created_at: "2025-01-01",
     ...overrides,
@@ -147,6 +165,7 @@ describe("GamePlayView", () => {
     vi.clearAllMocks();
     localStorage.clear();
     vi.mocked(requestVideoDataUri).mockResolvedValue("blob:mock-video");
+    vi.mocked(requestMediaDataUri).mockResolvedValue("blob:mock-audio");
   });
 
   it("shows the current player as a voting option", async () => {
@@ -487,6 +506,122 @@ describe("GamePlayView", () => {
         'video:not([aria-hidden="true"])'
       ) as HTMLVideoElement | null;
       expect(currentVideoElement).toBe(initialVideoElement);
+    });
+  });
+
+  it("renders a photo gallery with simple navigation controls", async () => {
+    storeSession("p1", "1234");
+
+    const firstImage = "https://cdn.example.com/photo-1.jpg";
+    const secondImage = "https://cdn.example.com/photo-2.jpg";
+
+    const supabase = makeSupabaseMock({
+      room: makeRoom(),
+      players: [makePlayer()],
+      round: makeRound(),
+      video: makeVideo({
+        media_type: "photo_gallery",
+        video_url: null,
+        video_urls: [],
+        image_urls: [firstImage, secondImage],
+        audio_url: "https://cdn.example.com/gallery-audio.mp3",
+        cover_url: firstImage,
+      }),
+    });
+
+    vi.mocked(createClient).mockReturnValue(supabase as never);
+
+    render(<GamePlayView lang="pl" pin="1234" dict={mockDict} />);
+
+    const image = await waitFor(() =>
+      screen.getByRole("img", { name: "TikTok photo 1 of 2" })
+    );
+    expect(image).toHaveAttribute("src", firstImage);
+
+    fireEvent.click(screen.getByRole("button", { name: "Next photo" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("img", { name: "TikTok photo 2 of 2" })).toHaveAttribute(
+        "src",
+        secondImage
+      );
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous photo" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("img", { name: "TikTok photo 1 of 2" })).toHaveAttribute(
+        "src",
+        firstImage
+      );
+    });
+  });
+
+  it("loads photo gallery audio through the extension media fetcher", async () => {
+    storeSession("p1", "1234");
+
+    const audioUrl = "https://cdn.example.com/gallery-audio.mp3";
+    const audioBlob = "blob:gallery-audio";
+
+    const supabase = makeSupabaseMock({
+      room: makeRoom(),
+      players: [makePlayer()],
+      round: makeRound(),
+      video: makeVideo({
+        media_type: "photo_gallery",
+        video_url: null,
+        video_urls: [],
+        image_urls: ["https://cdn.example.com/photo-1.jpg"],
+        audio_url: audioUrl,
+        cover_url: "https://cdn.example.com/photo-1.jpg",
+      }),
+    });
+
+    vi.mocked(createClient).mockReturnValue(supabase as never);
+    vi.mocked(requestMediaDataUri).mockResolvedValue(audioBlob);
+
+    const { container } = render(<GamePlayView lang="pl" pin="1234" dict={mockDict} />);
+
+    await waitFor(() => {
+      const audioElement = container.querySelector("audio") as HTMLAudioElement | null;
+      expect(requestMediaDataUri).toHaveBeenCalledWith(audioUrl);
+      expect(audioElement).not.toBeNull();
+      expect(audioElement?.getAttribute("src")).toBe(audioBlob);
+    });
+  });
+
+  it("prefetches the next round video while the current round is active", async () => {
+    storeSession("p1", "1234");
+
+    const currentVideoUrl = "https://example.com/current-video.mp4";
+    const nextVideoUrl = "https://example.com/next-video.mp4";
+    const currentBlob = "blob:current-video";
+    const nextBlob = "blob:next-video";
+
+    const supabase = makeSupabaseMock({
+      room: makeRoom(),
+      players: [makePlayer()],
+      round: makeRound(),
+      video: makeVideo({ video_url: currentVideoUrl, video_urls: [currentVideoUrl] }),
+      prefetchedVideo: makeVideo({
+        id: "video-2",
+        planned_round_number: 2,
+        video_url: nextVideoUrl,
+        video_urls: [nextVideoUrl],
+      }),
+    });
+
+    vi.mocked(createClient).mockReturnValue(supabase as never);
+    vi.mocked(requestVideoDataUri).mockImplementation((url: string) =>
+      Promise.resolve(url === nextVideoUrl ? nextBlob : currentBlob)
+    );
+
+    render(<GamePlayView lang="pl" pin="1234" dict={mockDict} />);
+
+    await waitFor(() => {
+      const urls = vi.mocked(requestVideoDataUri).mock.calls.map(([url]) => url);
+      expect(urls).toContain(currentVideoUrl);
+      expect(urls).toContain(nextVideoUrl);
     });
   });
 });

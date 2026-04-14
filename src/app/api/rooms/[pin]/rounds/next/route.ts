@@ -85,7 +85,9 @@ export async function POST(
 
     const { data: nextVideo } = await adminSupabase
       .from("videos")
-      .select("id, player_id, tiktok_url, video_url, video_urls, planned_round_number")
+      .select(
+        "id, player_id, tiktok_url, tiktok_video_id, media_type, video_url, video_urls, image_urls, audio_url, cover_url, planned_round_number"
+      )
       .eq("room_id", room.id)
       .eq("planned_round_number", nextRoundNum)
       .maybeSingle();

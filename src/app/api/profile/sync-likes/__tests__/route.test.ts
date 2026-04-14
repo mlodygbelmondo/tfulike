@@ -171,4 +171,76 @@ describe("POST /api/profile/sync-likes", () => {
       })
     );
   });
+
+  it("stores photo gallery media fields when the extension returns a photo mode item", async () => {
+    const profileSelect = makeChain({ data: { id: "user-1" }, error: null });
+    const profileSyncingUpdate = makeChain({ data: null, error: null });
+    const likesUpsert = makeChain({ data: null, error: null }) as Record<
+      string,
+      ReturnType<typeof vi.fn>
+    >;
+    const profileSyncedUpdate = makeChain({ data: null, error: null });
+    const playerUpdate = makeChain({ data: null, error: null });
+
+    const upsertSpy = vi.fn(() => likesUpsert);
+    likesUpsert.upsert = upsertSpy;
+
+    vi.mocked(createClient).mockResolvedValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({ data: { user: { id: "user-1" } } }),
+      },
+    } as never);
+
+    vi.mocked(createAdminClient).mockReturnValue({
+      from: vi
+        .fn()
+        .mockReturnValueOnce(profileSelect)
+        .mockReturnValueOnce(profileSyncingUpdate)
+        .mockReturnValueOnce(likesUpsert)
+        .mockReturnValueOnce(profileSyncedUpdate)
+        .mockReturnValueOnce(playerUpdate),
+    } as never);
+
+    const response = await POST(
+      makeRequest({
+        tiktok_username: "lider_drenazu",
+        likes: [
+          {
+            tiktok_video_id: "photo-1",
+            tiktok_url: "https://www.tiktok.com/@lider_drenazu/video/photo-1",
+            media_type: "photo_gallery",
+            image_urls: [
+              "https://cdn.example.com/photo-1.jpg",
+              "https://cdn.example.com/photo-2.jpg",
+            ],
+            audio_url: "https://cdn.example.com/audio-1.mp3",
+            cover_url: "https://cdn.example.com/cover.jpg",
+          },
+        ],
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(upsertSpy).toHaveBeenCalledWith(
+      [
+        expect.objectContaining({
+          user_id: "user-1",
+          tiktok_video_id: "photo-1",
+          media_type: "photo_gallery",
+          video_url: null,
+          video_urls: [],
+          image_urls: [
+            "https://cdn.example.com/photo-1.jpg",
+            "https://cdn.example.com/photo-2.jpg",
+          ],
+          audio_url: "https://cdn.example.com/audio-1.mp3",
+          cover_url: "https://cdn.example.com/cover.jpg",
+        }),
+      ],
+      {
+        onConflict: "user_id,tiktok_video_id",
+        ignoreDuplicates: false,
+      }
+    );
+  });
 });

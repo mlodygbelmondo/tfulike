@@ -9,6 +9,7 @@ import type { User } from "@supabase/supabase-js";
 import {
   requestVideoRefresh,
   checkExtensionPresent,
+  requestMediaDataUri,
   requestVideoDataUri,
 } from "@/lib/extension";
 import type { Player, Round, Video, RoomSettings } from "@/lib/types";
@@ -58,6 +59,28 @@ function summarizeVideoUrlForDebug(rawUrl: string | null | undefined) {
   }
 }
 
+function normalizeHttpUrls(values: Array<string | null | undefined>): string[] {
+  const urls: string[] = [];
+
+  for (const value of values) {
+    if (typeof value !== "string") continue;
+    const url = value.trim();
+    if (!url || !/^https?:\/\//i.test(url)) continue;
+    if (urls.includes(url)) continue;
+    urls.push(url);
+  }
+
+  return urls;
+}
+
+function createGalleryImageAlt(index: number, total: number): string {
+  return `TikTok photo ${index} of ${total}`;
+}
+
+function createMediaBlobCacheKey(videoId: string, url: string, kind: "video" | "audio"): string {
+  return `${videoId}::${kind}::${url}`;
+}
+
 function logVideoDebug(step: string, details: Record<string, unknown>) {
   if (!isVideoDebugEnabled()) return;
   console.debug("[DEBUG][tfulike-video]", step, details);
@@ -90,6 +113,11 @@ interface RevealData {
   players: Player[];
 }
 
+interface PrefetchedMediaBlob {
+  cacheKey: string;
+  blobUrl: string;
+}
+
 export function GamePlayView({
   lang,
   pin,
@@ -114,34 +142,49 @@ export function GamePlayView({
   const [slotRevealing, setSlotRevealing] = useState(false);
   const [slotDone, setSlotDone] = useState(false);
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
+  const [audioSrc, setAudioSrc] = useState<string | null>(null);
   const [videoFitMode, setVideoFitMode] = useState<VideoFitMode>("contain");
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [videoCandidates, setVideoCandidates] = useState<string[]>([]);
   const [videoCandidateIndex, setVideoCandidateIndex] = useState(0);
+  const [imageUrls, setImageUrls] = useState<string[]>([]);
+  const [imageIndex, setImageIndex] = useState(0);
   const [videoLoadFailed, setVideoLoadFailed] = useState(false);
   const [videoRefreshing, setVideoRefreshing] = useState(false);
   const [videoRefreshAttempted, setVideoRefreshAttempted] = useState(false);
   const [videoResolving, setVideoResolving] = useState(false);
+  const [audioResolving, setAudioResolving] = useState(false);
   const [revealSubmitting, setRevealSubmitting] = useState(false);
   const [nextRoundSubmitting, setNextRoundSubmitting] = useState(false);
   const revealTriggeredRef = useRef(false);
   const videoElementRef = useRef<HTMLVideoElement | null>(null);
+  const audioElementRef = useRef<HTMLAudioElement | null>(null);
   const videoContainerRef = useRef<HTMLDivElement | null>(null);
   const videoLoadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const extensionPresentRef = useRef<boolean | null>(null);
   const videoRefreshAttemptedRef = useRef(false);
   const attemptExtensionRefreshRef = useRef<(() => Promise<void>) | null>(null);
   const resolvedVideoSrcRef = useRef<string | null>(null);
+  const resolvedAudioSrcRef = useRef<string | null>(null);
   const videoResolveTokenRef = useRef(0);
+  const audioResolveTokenRef = useRef(0);
   const currentVideoIdRef = useRef<string | null>(null);
   const fetchRoundTokenRef = useRef(0);
+  const prefetchedVideoBlobRef = useRef<PrefetchedMediaBlob | null>(null);
+  const prefetchedAudioBlobRef = useRef<PrefetchedMediaBlob | null>(null);
+  const prefetchTokenRef = useRef(0);
 
   const videoSourceKey = [
     video?.id ?? "",
+    video?.media_type ?? "video",
     video?.video_url ?? "",
     Array.isArray(video?.video_urls) ? video.video_urls.join("|") : "",
+    Array.isArray(video?.image_urls) ? video.image_urls.join("|") : "",
+    video?.audio_url ?? "",
   ].join("::");
   const currentPlayerId = currentPlayer?.id ?? null;
+  const isPhotoGallery = video?.media_type === "photo_gallery";
+  const activeImageUrl = imageUrls[imageIndex] ?? null;
 
   useEffect(() => {
     currentVideoIdRef.current = video?.id ?? null;
@@ -293,35 +336,38 @@ export function GamePlayView({
   }, [pin, lang, router]);
 
   useEffect(() => {
-    const rawCandidates = [
+    const candidates = normalizeHttpUrls([
       ...(Array.isArray(video?.video_urls) ? video.video_urls : []),
       video?.video_url,
-    ];
-
-    const candidates = rawCandidates
-      .filter(
-        (url, index, arr) =>
-          typeof url === "string" &&
-          /^https?:\/\//i.test(url) &&
-          arr.indexOf(url) === index
-      )
-      .filter((url): url is string => typeof url === "string");
+    ]);
+    const nextImageUrls = normalizeHttpUrls(Array.isArray(video?.image_urls) ? video.image_urls : []);
 
     setVideoCandidates(candidates);
     setVideoCandidateIndex(0);
+    setImageUrls(nextImageUrls);
+    setImageIndex(0);
     setVideoLoadFailed(false);
     setVideoRefreshing(false);
     setVideoRefreshAttempted(false);
-    setVideoResolving(candidates.length > 0);
+    setVideoResolving(!isPhotoGallery && candidates.length > 0);
+    setAudioResolving(isPhotoGallery && Boolean(video?.audio_url));
     videoRefreshAttemptedRef.current = false;
     setVideoFitMode("contain");
     setSoundEnabled(true);
     setVideoSrc(null);
+    setAudioSrc(null);
+
+    if (resolvedAudioSrcRef.current) {
+      URL.revokeObjectURL(resolvedAudioSrcRef.current);
+      resolvedAudioSrcRef.current = null;
+    }
 
     logVideoDebug("video-candidates-prepared", {
       videoId: video?.id ?? null,
+      mediaType: video?.media_type ?? "video",
       selectedCandidateIndex: 0,
       candidateCount: candidates.length,
+      imageCount: nextImageUrls.length,
       candidates: candidates.map((url, index) => ({
         index,
         summary: summarizeVideoUrlForDebug(url),
@@ -331,7 +377,7 @@ export function GamePlayView({
     // raw array identity so vote-triggered refetches do not blank and re-resolve
     // the same video source.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [videoSourceKey]);
+  }, [videoSourceKey, isPhotoGallery, video?.audio_url, video?.media_type]);
 
   useEffect(() => {
     return () => {
@@ -339,8 +385,122 @@ export function GamePlayView({
         URL.revokeObjectURL(resolvedVideoSrcRef.current);
         resolvedVideoSrcRef.current = null;
       }
+
+      if (resolvedAudioSrcRef.current) {
+        URL.revokeObjectURL(resolvedAudioSrcRef.current);
+        resolvedAudioSrcRef.current = null;
+      }
+
+      if (prefetchedVideoBlobRef.current) {
+        URL.revokeObjectURL(prefetchedVideoBlobRef.current.blobUrl);
+        prefetchedVideoBlobRef.current = null;
+      }
+
+      if (prefetchedAudioBlobRef.current) {
+        URL.revokeObjectURL(prefetchedAudioBlobRef.current.blobUrl);
+        prefetchedAudioBlobRef.current = null;
+      }
     };
   }, []);
+
+  useEffect(() => {
+    if (!roomId || !round?.round_number) {
+      return;
+    }
+
+    const nextRoundNumber = round.round_number + 1;
+    if (totalRounds > 0 && nextRoundNumber > totalRounds) {
+      return;
+    }
+
+    const prefetchToken = prefetchTokenRef.current + 1;
+    prefetchTokenRef.current = prefetchToken;
+    const supabase = createClient();
+
+    void (async () => {
+      const { data: nextVideoData } = await supabase
+        .from("videos")
+        .select("id, media_type, video_url, video_urls, audio_url")
+        .eq("room_id", roomId)
+        .eq("planned_round_number", nextRoundNumber)
+        .maybeSingle();
+
+      if (prefetchTokenRef.current !== prefetchToken || !nextVideoData?.id) {
+        return;
+      }
+
+      const nextVideoCandidates = normalizeHttpUrls([
+        ...(Array.isArray(nextVideoData.video_urls) ? nextVideoData.video_urls : []),
+        nextVideoData.video_url,
+      ]);
+      const nextAudioUrl =
+        typeof nextVideoData.audio_url === "string" ? nextVideoData.audio_url : null;
+      const nextVideoCacheKey =
+        nextVideoCandidates.length > 0
+          ? createMediaBlobCacheKey(nextVideoData.id, nextVideoCandidates[0], "video")
+          : null;
+      const nextAudioCacheKey =
+        nextAudioUrl && nextVideoData.media_type === "photo_gallery"
+          ? createMediaBlobCacheKey(nextVideoData.id, nextAudioUrl, "audio")
+          : null;
+
+      if (
+        prefetchedVideoBlobRef.current &&
+        prefetchedVideoBlobRef.current.cacheKey !== nextVideoCacheKey
+      ) {
+        URL.revokeObjectURL(prefetchedVideoBlobRef.current.blobUrl);
+        prefetchedVideoBlobRef.current = null;
+      }
+
+      if (
+        prefetchedAudioBlobRef.current &&
+        prefetchedAudioBlobRef.current.cacheKey !== nextAudioCacheKey
+      ) {
+        URL.revokeObjectURL(prefetchedAudioBlobRef.current.blobUrl);
+        prefetchedAudioBlobRef.current = null;
+      }
+
+      if (
+        nextVideoCacheKey &&
+        prefetchedVideoBlobRef.current?.cacheKey !== nextVideoCacheKey
+      ) {
+        try {
+          const blobUrl = await requestVideoDataUri(nextVideoCandidates[0]);
+          if (prefetchTokenRef.current !== prefetchToken) {
+            URL.revokeObjectURL(blobUrl);
+            return;
+          }
+
+          prefetchedVideoBlobRef.current = {
+            cacheKey: nextVideoCacheKey,
+            blobUrl,
+          };
+        } catch {
+          // Ignore prefetch failures and fall back to the normal active-round fetch path.
+        }
+      }
+
+      if (
+        nextAudioCacheKey &&
+        prefetchedAudioBlobRef.current?.cacheKey !== nextAudioCacheKey
+      ) {
+        try {
+          const blobUrl = await requestMediaDataUri(nextAudioUrl as string);
+          if (prefetchTokenRef.current !== prefetchToken) {
+            URL.revokeObjectURL(blobUrl);
+            return;
+          }
+
+          prefetchedAudioBlobRef.current = {
+            cacheKey: nextAudioCacheKey,
+            blobUrl,
+          };
+        } catch {
+          // Ignore prefetch failures and fall back to the normal active-round fetch path.
+        }
+      }
+    })();
+  }, [roomId, round?.round_number, totalRounds]);
 
   useEffect(() => {
     if (!videoSrc) {
@@ -371,6 +531,7 @@ export function GamePlayView({
 
   // 3-second timeout: if video hasn't started playing, try extension refresh
   useEffect(() => {
+    if (isPhotoGallery) return;
     if (!videoSrc || videoRefreshAttempted || videoRefreshing) return;
 
     if (videoLoadTimeoutRef.current) {
@@ -399,7 +560,7 @@ export function GamePlayView({
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [videoSrc, videoRefreshAttempted, videoRefreshing]);
+  }, [isPhotoGallery, videoSrc, videoRefreshAttempted, videoRefreshing]);
 
   // Cancel timeout when video successfully plays
   const handlePlaying = useCallback(
@@ -478,25 +639,25 @@ export function GamePlayView({
   );
 
   const handleSoundToggle = useCallback(async () => {
-    const element = videoElementRef.current;
-    if (!element) return;
-
     const nextSoundEnabled = !soundEnabled;
+    const mediaElement = isPhotoGallery ? audioElementRef.current : videoElementRef.current;
+    if (!mediaElement) return;
 
-    element.muted = !nextSoundEnabled;
+    mediaElement.muted = !nextSoundEnabled;
     setSoundEnabled(nextSoundEnabled);
 
     try {
-      await element.play();
+      await mediaElement.play();
     } catch (error) {
-      element.muted = !soundEnabled;
+      mediaElement.muted = !soundEnabled;
       setSoundEnabled(soundEnabled);
       logVideoDebug("video-sound-toggle-failed", {
         videoId: video?.id ?? null,
+        mediaType: video?.media_type ?? "video",
         error: String(error instanceof Error ? error.message : error),
       });
     }
-  }, [soundEnabled, video?.id]);
+  }, [isPhotoGallery, soundEnabled, video?.id, video?.media_type]);
 
   /**
    * Try to get fresh video URLs from the extension by re-scraping TikTok.
@@ -582,6 +743,12 @@ export function GamePlayView({
   }, [attemptExtensionRefresh]);
 
   useEffect(() => {
+    if (isPhotoGallery) {
+      setVideoResolving(false);
+      setVideoSrc(null);
+      return;
+    }
+
     const candidate = videoCandidates[videoCandidateIndex] || null;
     const resolveToken = videoResolveTokenRef.current + 1;
     videoResolveTokenRef.current = resolveToken;
@@ -594,6 +761,19 @@ export function GamePlayView({
     if (!candidate) {
       setVideoResolving(false);
       setVideoSrc(null);
+      return;
+    }
+
+    const videoCacheKey = video?.id
+      ? createMediaBlobCacheKey(video.id, candidate, "video")
+      : null;
+
+    if (videoCacheKey && prefetchedVideoBlobRef.current?.cacheKey === videoCacheKey) {
+      const prefetchedBlob = prefetchedVideoBlobRef.current;
+      prefetchedVideoBlobRef.current = null;
+      resolvedVideoSrcRef.current = prefetchedBlob.blobUrl;
+      setVideoResolving(false);
+      setVideoSrc(prefetchedBlob.blobUrl);
       return;
     }
 
@@ -645,11 +825,84 @@ export function GamePlayView({
       }
     };
   }, [
+    isPhotoGallery,
     video?.id,
     videoCandidates,
     videoCandidateIndex,
     videoSourceKey,
   ]);
+
+  useEffect(() => {
+    if (!isPhotoGallery) {
+      setAudioResolving(false);
+      setAudioSrc(null);
+      return;
+    }
+
+    const audioUrl = typeof video?.audio_url === "string" ? video.audio_url : null;
+    const resolveToken = audioResolveTokenRef.current + 1;
+    audioResolveTokenRef.current = resolveToken;
+
+    if (resolvedAudioSrcRef.current) {
+      URL.revokeObjectURL(resolvedAudioSrcRef.current);
+      resolvedAudioSrcRef.current = null;
+    }
+
+    if (!audioUrl) {
+      setAudioResolving(false);
+      setAudioSrc(null);
+      return;
+    }
+
+    const audioCacheKey = video?.id
+      ? createMediaBlobCacheKey(video.id, audioUrl, "audio")
+      : null;
+
+    if (audioCacheKey && prefetchedAudioBlobRef.current?.cacheKey === audioCacheKey) {
+      const prefetchedBlob = prefetchedAudioBlobRef.current;
+      prefetchedAudioBlobRef.current = null;
+      resolvedAudioSrcRef.current = prefetchedBlob.blobUrl;
+      setAudioResolving(false);
+      setAudioSrc(prefetchedBlob.blobUrl);
+      return;
+    }
+
+    setAudioResolving(true);
+    setAudioSrc(null);
+
+    requestMediaDataUri(audioUrl)
+      .then((blobUrl) => {
+        if (audioResolveTokenRef.current !== resolveToken) {
+          URL.revokeObjectURL(blobUrl);
+          return;
+        }
+
+        resolvedAudioSrcRef.current = blobUrl;
+        setAudioResolving(false);
+        setAudioSrc(blobUrl);
+      })
+      .catch((err) => {
+        if (audioResolveTokenRef.current !== resolveToken) {
+          return;
+        }
+
+        logVideoDebug("gallery-audio-fetch-error", {
+          videoId: video?.id ?? null,
+          mediaType: video?.media_type ?? "photo_gallery",
+          audioUrl: summarizeVideoUrlForDebug(audioUrl),
+          error: String(err instanceof Error ? err.message : err),
+        });
+
+        setAudioResolving(false);
+        setAudioSrc(null);
+      });
+
+    return () => {
+      if (audioResolveTokenRef.current === resolveToken) {
+        audioResolveTokenRef.current += 1;
+      }
+    };
+  }, [isPhotoGallery, video?.audio_url, video?.id, video?.media_type]);
 
   // Initial load
   useEffect(() => {
@@ -865,12 +1118,77 @@ export function GamePlayView({
         )}
       </div>
 
-      {/* Video - MP4 playback */}
+      {/* Media playback */}
       <div
         ref={videoContainerRef}
         className="relative flex-1 overflow-hidden rounded-2xl bg-surface"
       >
-        {videoSrc ? (
+        {isPhotoGallery && activeImageUrl ? (
+          <>
+            <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-black/10 to-black/35" />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={activeImageUrl}
+              alt={createGalleryImageAlt(imageIndex + 1, imageUrls.length)}
+              className="block h-full w-full object-contain object-center"
+            />
+            <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-3">
+              <div className="rounded-full bg-black/60 px-3 py-1 text-xs font-medium text-white">
+                {imageIndex + 1} / {imageUrls.length}
+              </div>
+            </div>
+            {imageUrls.length > 1 && (
+              <>
+                <button
+                  type="button"
+                  aria-label="Previous photo"
+                  onClick={() => setImageIndex((current) => Math.max(current - 1, 0))}
+                  disabled={imageIndex === 0}
+                  className="absolute left-3 top-1/2 z-20 -translate-y-1/2 rounded-full bg-black/70 px-3 py-2 text-xs font-medium text-white disabled:opacity-40"
+                >
+                  Prev
+                </button>
+                <button
+                  type="button"
+                  aria-label="Next photo"
+                  onClick={() =>
+                    setImageIndex((current) => Math.min(current + 1, imageUrls.length - 1))
+                  }
+                  disabled={imageIndex >= imageUrls.length - 1}
+                  className="absolute right-3 top-1/2 z-20 -translate-y-1/2 rounded-full bg-black/70 px-3 py-2 text-xs font-medium text-white disabled:opacity-40"
+                >
+                  Next
+                </button>
+              </>
+            )}
+            {audioSrc && (
+              <audio
+                ref={audioElementRef}
+                src={audioSrc}
+                autoPlay
+                loop
+                muted={!soundEnabled}
+                preload="metadata"
+                onCanPlay={(event) => {
+                  const element = event.currentTarget;
+                  element.muted = !soundEnabled;
+                  void element.play().catch(() => {
+                    element.muted = true;
+                    setSoundEnabled(false);
+                    void element.play().catch(() => undefined);
+                  });
+                }}
+              />
+            )}
+            <button
+              type="button"
+              onClick={handleSoundToggle}
+              className="absolute right-3 top-3 z-20 rounded-full bg-black/70 px-3 py-1 text-xs font-medium text-white"
+            >
+              {soundEnabled ? "Tap to mute" : "Tap for sound"}
+            </button>
+          </>
+        ) : videoSrc ? (
           <>
             <video
               aria-hidden="true"
@@ -988,15 +1306,15 @@ export function GamePlayView({
             </button>
           </>
         ) : (
-          <div className="w-full h-full bg-surface rounded-2xl flex items-center justify-center p-4">
-            <div className="text-center text-sm text-muted">
-              {videoRefreshing ? (
-                <p className="animate-pulse">Refreshing video link...</p>
-              ) : videoResolving ? (
-                <p className="animate-pulse">Loading video...</p>
-              ) : (
-                <>
-                  <p>
+            <div className="w-full h-full bg-surface rounded-2xl flex items-center justify-center p-4">
+              <div className="text-center text-sm text-muted">
+                {videoRefreshing ? (
+                  <p className="animate-pulse">Refreshing video link...</p>
+                ) : videoResolving || audioResolving ? (
+                  <p className="animate-pulse">Loading video...</p>
+                ) : (
+                  <>
+                    <p>
                     {videoLoadFailed
                       ? "This TikTok video expired or could not be loaded in Chrome."
                       : "Video unavailable in this round."}

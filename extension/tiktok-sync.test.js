@@ -87,7 +87,75 @@ describe("parseTikTokItem", () => {
     ).toMatchObject({
       tiktok_video_id: "123",
       tiktok_url: "https://www.tiktok.com/@author1/video/123",
+      media_type: "video",
       video_url: "https://cdn.example.com/play.mp4",
+    });
+  });
+
+  it("extracts photo gallery images and audio from a photo mode item", () => {
+    expect(
+      parseTikTokItem({
+        id: "124",
+        desc: "photo mode",
+        author: { uniqueId: "author2" },
+        imagePost: {
+          images: [
+            {
+              imageURL: {
+                urlList: [
+                  "https://cdn.example.com/photo-1.jpg",
+                  "https://cdn.example.com/photo-1-alt.jpg",
+                ],
+              },
+            },
+            {
+              imageURL: {
+                urlList: ["https://cdn.example.com/photo-2.jpg"],
+              },
+            },
+          ],
+        },
+        music: {
+          playUrl: "https://cdn.example.com/audio.mp3",
+        },
+      })
+    ).toMatchObject({
+      tiktok_video_id: "124",
+      tiktok_url: "https://www.tiktok.com/@author2/video/124",
+      media_type: "photo_gallery",
+      video_url: null,
+      video_urls: [],
+      image_urls: [
+        "https://cdn.example.com/photo-1.jpg",
+        "https://cdn.example.com/photo-2.jpg",
+      ],
+      audio_url: "https://cdn.example.com/audio.mp3",
+    });
+  });
+
+  it("supports snake_case photo mode payloads", () => {
+    expect(
+      parseTikTokItem({
+        id: "125",
+        desc: "photo mode",
+        author: { uniqueId: "author3" },
+        image_post: {
+          images: [
+            {
+              image_url: {
+                url_list: ["https://cdn.example.com/photo-3.jpg"],
+              },
+            },
+          ],
+        },
+        music: {
+          play_url: "https://cdn.example.com/audio-2.mp3",
+        },
+      })
+    ).toMatchObject({
+      media_type: "photo_gallery",
+      image_urls: ["https://cdn.example.com/photo-3.jpg"],
+      audio_url: "https://cdn.example.com/audio-2.mp3",
     });
   });
 });

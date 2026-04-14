@@ -4,6 +4,7 @@
 export type RoomStatus = "lobby" | "playing" | "finished";
 export type RoundStatus = "voting" | "reveal" | "done";
 export type SyncStatus = "idle" | "syncing" | "synced" | "error";
+export type MediaType = "video" | "photo_gallery";
 
 // ============================================
 // Auth / Profile types
@@ -28,8 +29,11 @@ export interface UserLike {
   user_id: string;
   tiktok_video_id: string;
   tiktok_url: string | null;
+   media_type: MediaType;
   video_url: string | null;
   video_urls: string[];
+  image_urls: string[];
+  audio_url: string | null;
   author_username: string | null;
   description: string | null;
   cover_url: string | null;
@@ -75,8 +79,12 @@ export interface Video {
   player_id: string;
   tiktok_url: string | null;
   tiktok_video_id?: string | null;
+  media_type?: MediaType;
   video_url: string | null; // direct MP4 URL
   video_urls?: string[] | null;
+  image_urls?: string[] | null;
+  audio_url?: string | null;
+  cover_url?: string | null;
   used: boolean;
   planned_round_number?: number | null;
   created_at: string;
@@ -109,8 +117,11 @@ export interface Like {
   room_id: string;
   tiktok_video_id: string;
   tiktok_url: string | null;
+  media_type?: MediaType;
   video_url: string | null;
   video_urls?: string[] | null;
+  image_urls?: string[] | null;
+  audio_url?: string | null;
   author_username: string | null;
   description: string | null;
   cover_url: string | null;

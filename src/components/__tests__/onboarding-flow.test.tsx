@@ -141,4 +141,74 @@ describe("OnboardingFlow", () => {
 
     expect(await screen.findByText("User profile not found")).toBeInTheDocument();
   });
+
+  it("passes photo gallery fields through to profile sync", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ profile: {} }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ profile: {} }) });
+    globalThis.fetch = fetchMock as never;
+
+    mockRequestExtensionSync.mockResolvedValue({
+      ok: true,
+      tiktok_username: "resolved.from.extension",
+      likes: [
+        {
+          tiktok_video_id: "gallery-1",
+          tiktok_url: "https://www.tiktok.com/@resolved.from.extension/video/gallery-1",
+          media_type: "photo_gallery",
+          image_urls: [
+            "https://cdn.example.com/photo-1.jpg",
+            "https://cdn.example.com/photo-2.jpg",
+          ],
+          audio_url: "https://cdn.example.com/audio.mp3",
+          cover_url: "https://cdn.example.com/cover.jpg",
+        },
+      ],
+    });
+
+    render(
+      <OnboardingFlow
+        lang="en"
+        dict={mockDict}
+        initialProfile={{
+          nickname: "Alice",
+          color: "#5856d6",
+          avatar_url: null,
+          tiktok_username: null,
+          sync_status: "idle",
+        }}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: mockDict.onboarding.next }));
+    await user.click(screen.getByRole("button", { name: mockDict.onboarding.syncLikes }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        2,
+        "/api/profile/sync-likes",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            tiktok_username: "resolved.from.extension",
+            likes: [
+              {
+                tiktok_video_id: "gallery-1",
+                tiktok_url: "https://www.tiktok.com/@resolved.from.extension/video/gallery-1",
+                media_type: "photo_gallery",
+                image_urls: [
+                  "https://cdn.example.com/photo-1.jpg",
+                  "https://cdn.example.com/photo-2.jpg",
+                ],
+                audio_url: "https://cdn.example.com/audio.mp3",
+                cover_url: "https://cdn.example.com/cover.jpg",
+              },
+            ],
+          }),
+        }
+      );
+    });
+  });
 });

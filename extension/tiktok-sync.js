@@ -1,6 +1,69 @@
 const DESKTOP_UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36";
 
+function normalizeUrl(url) {
+  if (typeof url !== "string") return null;
+  const normalized = url.trim();
+  if (!normalized || !/^https?:\/\//i.test(normalized)) return null;
+  return normalized;
+}
+
+function collectUniqueUrls(values) {
+  const urls = [];
+
+  for (const value of values) {
+    const normalized = normalizeUrl(value);
+    if (!normalized || urls.includes(normalized)) {
+      continue;
+    }
+    urls.push(normalized);
+  }
+
+  return urls;
+}
+
+function extractImageUrls(item) {
+  const imagePost = item?.imagePost || item?.image_post || null;
+  const images = Array.isArray(imagePost?.images) ? imagePost.images : [];
+  const imageUrls = [];
+
+  for (const image of images) {
+    const candidates = [
+      ...(Array.isArray(image?.imageURL?.urlList) ? image.imageURL.urlList : []),
+      ...(Array.isArray(image?.image_url?.url_list) ? image.image_url.url_list : []),
+      ...(Array.isArray(image?.displayImage?.urlList) ? image.displayImage.urlList : []),
+    ];
+    const selectedUrl = collectUniqueUrls(candidates)[0];
+    if (selectedUrl && !imageUrls.includes(selectedUrl)) {
+      imageUrls.push(selectedUrl);
+    }
+  }
+
+  if (imageUrls.length > 0) {
+    return imageUrls;
+  }
+
+  return collectUniqueUrls([
+    ...(Array.isArray(imagePost?.cover?.imageURL?.urlList)
+      ? imagePost.cover.imageURL.urlList
+      : []),
+    ...(Array.isArray(imagePost?.cover?.image_url?.url_list)
+      ? imagePost.cover.image_url.url_list
+      : []),
+  ]);
+}
+
+function extractAudioUrl(item) {
+  return (
+    collectUniqueUrls([
+      item?.music?.playUrl,
+      item?.music?.play_url,
+      item?.music?.audioUrl,
+      item?.music?.audio_url,
+    ])[0] || null
+  );
+}
+
 function buildTikTokUrl(pathname, params) {
   const url = new URL(pathname, "https://www.tiktok.com");
   for (const [key, value] of Object.entries(params)) {
@@ -84,12 +147,13 @@ export function parseTikTokItem(item) {
 
   const authorUsername = item.author?.uniqueId || item.author?.nickname || "";
   const videoId = String(item.id);
+  const imageUrls = extractImageUrls(item);
+  const audioUrl = extractAudioUrl(item);
 
   const videoUrls = [];
   const pushUrl = (url) => {
-    if (typeof url !== "string") return;
-    const normalized = url.trim();
-    if (!normalized || !/^https?:\/\//i.test(normalized)) return;
+    const normalized = normalizeUrl(url);
+    if (!normalized) return;
     if (!videoUrls.includes(normalized)) {
       videoUrls.push(normalized);
     }
@@ -111,11 +175,16 @@ export function parseTikTokItem(item) {
     pushUrl(item.video.downloadAddr);
   }
 
+  const mediaType = imageUrls.length > 0 ? "photo_gallery" : "video";
+
   return {
     tiktok_video_id: videoId,
     tiktok_url: `https://www.tiktok.com/@${authorUsername}/video/${videoId}`,
-    video_url: videoUrls[0] || null,
-    video_urls: videoUrls,
+    media_type: mediaType,
+    video_url: mediaType === "video" ? videoUrls[0] || null : null,
+    video_urls: mediaType === "video" ? videoUrls : [],
+    image_urls: mediaType === "photo_gallery" ? imageUrls : [],
+    audio_url: mediaType === "photo_gallery" ? audioUrl : null,
     author_username: authorUsername || null,
     description: item.desc || null,
     cover_url: item.video?.cover || item.video?.originCover || null,

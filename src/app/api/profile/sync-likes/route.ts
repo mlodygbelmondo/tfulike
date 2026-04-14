@@ -5,8 +5,11 @@ import { createAdminClient } from "@/lib/supabase/admin";
 interface LikePayload {
   tiktok_video_id: string;
   tiktok_url?: string;
+  media_type?: "video" | "photo_gallery";
   video_url?: string;
   video_urls?: string[];
+  image_urls?: string[];
+  audio_url?: string;
   author_username?: string;
   description?: string;
   cover_url?: string;
@@ -29,6 +32,29 @@ function normalizeVideoUrls(like: LikePayload): string[] {
   }
 
   return deduped;
+}
+
+function normalizeImageUrls(like: LikePayload): string[] {
+  const candidateList = Array.isArray(like.image_urls) ? like.image_urls : [];
+
+  const deduped: string[] = [];
+  for (const raw of candidateList) {
+    if (typeof raw !== "string") continue;
+    const url = raw.trim();
+    if (!url) continue;
+    if (!/^https?:\/\//i.test(url)) continue;
+    if (deduped.includes(url)) continue;
+    deduped.push(url);
+  }
+
+  return deduped;
+}
+
+function normalizeAudioUrl(like: LikePayload): string | null {
+  if (typeof like.audio_url !== "string") return null;
+  const url = like.audio_url.trim();
+  if (!url || !/^https?:\/\//i.test(url)) return null;
+  return url;
 }
 
 export async function POST(request: Request) {
@@ -76,13 +102,19 @@ export async function POST(request: Request) {
 
     if (likes.length > 0) {
       const rows = likes.map((like) => {
+        const mediaType = like.media_type === "photo_gallery" ? "photo_gallery" : "video";
         const videoUrls = normalizeVideoUrls(like);
+        const imageUrls = normalizeImageUrls(like);
+        const audioUrl = normalizeAudioUrl(like);
         return {
           user_id: user.id,
           tiktok_video_id: like.tiktok_video_id,
           tiktok_url: like.tiktok_url ?? null,
-          video_url: videoUrls[0] ?? null,
-          video_urls: videoUrls,
+          media_type: mediaType,
+          video_url: mediaType === "video" ? videoUrls[0] ?? null : null,
+          video_urls: mediaType === "video" ? videoUrls : [],
+          image_urls: mediaType === "photo_gallery" ? imageUrls : [],
+          audio_url: mediaType === "photo_gallery" ? audioUrl : null,
           author_username: like.author_username ?? null,
           description: like.description ?? null,
           cover_url: like.cover_url ?? null,

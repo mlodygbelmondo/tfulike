@@ -103,8 +103,11 @@ export async function POST(
       string,
       Array<{
         tiktok_url: string | null;
+        media_type: "video" | "photo_gallery";
         video_url: string | null;
         video_urls: string[];
+        image_urls: string[];
+        audio_url: string | null;
         tiktok_video_id: string;
       }>
     >();
@@ -138,8 +141,22 @@ export async function POST(
           const existing = likesByPlayer.get(playerId) || [];
           existing.push({
             tiktok_url: like.tiktok_url,
+            media_type: like.media_type === "photo_gallery" ? "photo_gallery" : "video",
             video_url: mergedUrls[0] ?? null,
-            video_urls: mergedUrls,
+            video_urls:
+              like.media_type === "photo_gallery" ? [] : mergedUrls,
+            image_urls: Array.isArray(like.image_urls)
+              ? like.image_urls.filter(
+                  (url: unknown, index: number, arr: unknown[]) =>
+                    typeof url === "string" &&
+                    /^https?:\/\//i.test(url) &&
+                    arr.indexOf(url) === index
+                )
+              : [],
+            audio_url:
+              typeof like.audio_url === "string" && /^https?:\/\//i.test(like.audio_url)
+                ? like.audio_url
+                : null,
             tiktok_video_id: like.tiktok_video_id,
           });
           likesByPlayer.set(playerId, existing);
@@ -177,8 +194,11 @@ export async function POST(
           playerId,
           likes.map((like) => ({
             tiktokUrl: like.tiktok_url,
+            mediaType: like.media_type,
             videoUrl: like.video_url,
             videoUrls: like.video_urls,
+            imageUrls: like.image_urls,
+            audioUrl: like.audio_url,
             tiktokVideoId: like.tiktok_video_id,
           })),
         ])
@@ -200,8 +220,11 @@ export async function POST(
       player_id: ra.playerId,
       tiktok_url: ra.tiktokUrl,
       tiktok_video_id: ra.tiktokVideoId,
+      media_type: ra.mediaType,
       video_url: ra.videoUrl,
       video_urls: ra.videoUrls,
+      image_urls: ra.imageUrls,
+      audio_url: ra.audioUrl,
       planned_round_number: ra.plannedRoundNumber,
       used: false,
     }));

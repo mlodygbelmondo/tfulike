@@ -222,20 +222,94 @@ describe("assignRoundOrder", () => {
       {
         playerId: "p1",
         tiktokUrl: "https://www.tiktok.com/@alice/video/1",
+        mediaType: "video",
         videoUrl: "https://cdn.example.com/1.mp4",
         videoUrls: ["https://cdn.example.com/1.mp4"],
+        imageUrls: [],
+        audioUrl: null,
         tiktokVideoId: "1",
         plannedRoundNumber: 1,
       },
       {
         playerId: "p2",
         tiktokUrl: "https://www.tiktok.com/@bob/video/2",
+        mediaType: "video",
         videoUrl: "https://cdn.example.com/2.mp4",
         videoUrls: ["https://cdn.example.com/2.mp4"],
+        imageUrls: [],
+        audioUrl: null,
         tiktokVideoId: "2",
         plannedRoundNumber: 2,
       },
     ]);
+  });
+
+  it("keeps photo gallery rounds when there are image urls even without video urls", () => {
+    const assignments = assignRoundOrder(
+      new Map([
+        [
+          "p1",
+          [
+            {
+              tiktokUrl: "https://www.tiktok.com/@alice/video/10",
+              mediaType: "photo_gallery",
+              videoUrl: null,
+              videoUrls: [],
+              imageUrls: [
+                "https://cdn.example.com/photo-1.jpg",
+                "https://cdn.example.com/photo-2.jpg",
+              ],
+              audioUrl: "https://cdn.example.com/audio.mp3",
+              tiktokVideoId: "10",
+            },
+          ],
+        ],
+      ]),
+      1,
+      () => 0
+    );
+
+    expect(assignments).toEqual([
+      {
+        playerId: "p1",
+        tiktokUrl: "https://www.tiktok.com/@alice/video/10",
+        mediaType: "photo_gallery",
+        videoUrl: null,
+        videoUrls: [],
+        imageUrls: [
+          "https://cdn.example.com/photo-1.jpg",
+          "https://cdn.example.com/photo-2.jpg",
+        ],
+        audioUrl: "https://cdn.example.com/audio.mp3",
+        tiktokVideoId: "10",
+        plannedRoundNumber: 1,
+      },
+    ]);
+  });
+
+  it("still filters out items with no playable media at all", () => {
+    const assignments = assignRoundOrder(
+      new Map([
+        [
+          "p1",
+          [
+            {
+              tiktokUrl: "https://www.tiktok.com/@alice/video/11",
+              mediaType: "photo_gallery",
+              videoUrl: null,
+              videoUrls: [],
+              imageUrls: [],
+              audioUrl: null,
+              tiktokVideoId: "11",
+            },
+          ],
+        ],
+      ]),
+      1,
+      () => 0
+    );
+
+    expect(assignments).toEqual([]);
   });
 });
 

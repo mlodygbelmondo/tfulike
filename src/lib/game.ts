@@ -4,8 +4,11 @@ import type { RoomSettings } from "./types";
 
 interface RoundOrderCandidate {
   tiktokUrl: string | null;
+  mediaType?: "video" | "photo_gallery";
   videoUrl: string | null;
   videoUrls: string[];
+  imageUrls?: string[];
+  audioUrl?: string | null;
   tiktokVideoId: string;
 }
 
@@ -77,7 +80,11 @@ export function assignRoundOrder(
   for (const [playerId, likes] of likesByPlayer) {
     const shuffled = [...likes]
       .sort(() => random() - 0.5)
-      .filter((like) => like.videoUrls.length > 0);
+      .filter(
+        (like) =>
+          like.videoUrls.length > 0 ||
+          (Array.isArray(like.imageUrls) && like.imageUrls.length > 0)
+      );
 
     if (shuffled.length > 0) {
       videoPool.set(playerId, shuffled);
@@ -119,8 +126,11 @@ export function assignRoundOrder(
     assignments.push({
       playerId: selectedPlayerId,
       tiktokUrl: video.tiktokUrl,
+      mediaType: video.mediaType ?? "video",
       videoUrl: video.videoUrl,
       videoUrls: video.videoUrls,
+      imageUrls: Array.isArray(video.imageUrls) ? video.imageUrls : [],
+      audioUrl: video.audioUrl ?? null,
       tiktokVideoId: video.tiktokVideoId,
       plannedRoundNumber: assignments.length + 1,
     });

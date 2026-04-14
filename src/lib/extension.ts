@@ -10,8 +10,11 @@ export interface ExtensionSyncResponse {
   likes?: Array<{
     tiktok_video_id: string;
     tiktok_url?: string;
+    media_type?: "video" | "photo_gallery";
     video_url?: string;
     video_urls?: string[];
+    image_urls?: string[];
+    audio_url?: string;
     author_username?: string;
     description?: string;
     cover_url?: string;
@@ -175,11 +178,7 @@ export function requestVideoRefresh(
   });
 }
 
-/**
- * Request the extension to fetch a raw video URL on the client's network stack
- * and return a Blob URL that the page can play without direct TikTok requests.
- */
-export function requestVideoDataUri(url: string): Promise<string> {
+function requestBinaryMediaBlob(url: string): Promise<string> {
   return new Promise((resolve, reject) => {
     if (typeof window === "undefined") {
       reject(new Error("Not in browser"));
@@ -224,4 +223,20 @@ export function requestVideoDataUri(url: string): Promise<string> {
       "*"
     );
   });
+}
+
+/**
+ * Request the extension to fetch a raw video URL on the client's network stack
+ * and return a Blob URL that the page can play without direct TikTok requests.
+ */
+export function requestVideoDataUri(url: string): Promise<string> {
+  return requestBinaryMediaBlob(url);
+}
+
+/**
+ * Request the extension to fetch any binary media URL and return a Blob URL.
+ * Used for photo-gallery audio tracks and other non-video media assets.
+ */
+export function requestMediaDataUri(url: string): Promise<string> {
+  return requestBinaryMediaBlob(url);
 }

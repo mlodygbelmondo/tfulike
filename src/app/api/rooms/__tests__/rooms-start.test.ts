@@ -283,6 +283,94 @@ describe("POST /api/rooms/[pin]/start", () => {
     expect(json.totalRounds).toBeGreaterThan(0);
   });
 
+  it("starts game successfully when a selected item is a photo gallery with audio", async () => {
+    const room = {
+      id: "r1",
+      pin: "1234",
+      status: "lobby",
+      host_player_id: "host-1",
+      settings: { max_rounds: 1 },
+    };
+    const round = { id: "round-1", round_number: 1, status: "voting" };
+    const insertedVideos = [
+      {
+        id: "gallery-1",
+        player_id: "host-1",
+        tiktok_url: "https://tiktok.com/@user1/video/10",
+        tiktok_video_id: "10",
+        media_type: "photo_gallery",
+        video_url: null,
+        video_urls: [],
+        image_urls: [
+          "https://cdn.example.com/photo-1.jpg",
+          "https://cdn.example.com/photo-2.jpg",
+        ],
+        audio_url: "https://cdn.example.com/audio.mp3",
+        planned_round_number: 1,
+      },
+    ];
+
+    mockClients({
+      userId: HOST_USER_ID,
+      roomResult: { data: room, error: null },
+      adminResults: [
+        {
+          data: [
+            { id: "host-1", user_id: HOST_USER_ID, nickname: "Alice", sync_status: "synced" },
+            { id: "p2", user_id: OTHER_USER_ID, nickname: "Bob", sync_status: "synced" },
+          ],
+          error: null,
+        },
+        {
+          data: [
+            { id: HOST_USER_ID, sync_status: "synced", nickname: "Alice" },
+            { id: OTHER_USER_ID, sync_status: "synced", nickname: "Bob" },
+          ],
+          error: null,
+        },
+        {
+          data: [
+            {
+              user_id: HOST_USER_ID,
+              tiktok_url: "https://tiktok.com/@user1/video/10",
+              video_url: null,
+              video_urls: [],
+              image_urls: [
+                "https://cdn.example.com/photo-1.jpg",
+                "https://cdn.example.com/photo-2.jpg",
+              ],
+              audio_url: "https://cdn.example.com/audio.mp3",
+              media_type: "photo_gallery",
+              tiktok_video_id: "10",
+            },
+            {
+              user_id: OTHER_USER_ID,
+              tiktok_url: "https://tiktok.com/@user2/video/4",
+              video_url: "https://example.com/4.mp4",
+              video_urls: ["https://example.com/4.mp4"],
+              image_urls: [],
+              audio_url: null,
+              media_type: "video",
+              tiktok_video_id: "4",
+            },
+          ],
+          error: null,
+        },
+        { data: null, error: null },
+        { data: insertedVideos, error: null },
+        { data: null, error: null },
+        { data: round, error: null },
+        { data: null, error: null },
+      ],
+    });
+
+    const res = await POST(makeRequest(), { params });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.round).toBeDefined();
+    expect(json.totalRounds).toBe(1);
+  });
+
   it("returns 400 when a player has no likes in user_likes", async () => {
     const room = {
       id: "r1",

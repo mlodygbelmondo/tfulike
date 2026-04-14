@@ -14,14 +14,25 @@ import { getStoredSession, clearSession } from "@/lib/game";
  *  - `dismiss`: call this to forget the session (clears localStorage)
  */
 export function useStoredSession() {
-  const [session, setSession] = useState(() => getStoredSession());
+  const [session, setSession] = useState<ReturnType<typeof getStoredSession>>(null);
+  const [checking, setChecking] = useState(true);
+
+  useEffect(() => {
+    const id = requestAnimationFrame(() => {
+      setSession(getStoredSession());
+      setChecking(false);
+    });
+
+    return () => cancelAnimationFrame(id);
+  }, []);
 
   function dismiss() {
     clearSession();
     setSession(null);
+    setChecking(false);
   }
 
-  return { session, checking: false, dismiss };
+  return { session, checking, dismiss };
 }
 
 /**
