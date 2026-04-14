@@ -9,10 +9,7 @@ import type { Player, Room, SyncStatus } from "@/lib/types";
 import { ROUND_COUNT_OPTIONS } from "@/lib/types";
 import type { Dictionary } from "@/lib/dictionaries";
 import Link from "next/link";
-import {
-  checkExtensionPresent,
-  requestExtensionSync,
-} from "@/lib/extension";
+import { checkExtensionPresent, requestExtensionSync } from "@/lib/extension";
 
 export function LobbyView({
   lang,
@@ -41,7 +38,6 @@ export function LobbyView({
   // Sync state
   const [syncing, setSyncing] = useState(false);
 
-  // Check extension on mount
   useEffect(() => {
     checkExtensionPresent().then((version) => {
       setExtensionVersion(version);
@@ -172,59 +168,6 @@ export function LobbyView({
     }
   }
 
-  async function handleSyncLikes() {
-    if (!currentPlayer || !room || syncing) return;
-    if (!extensionVersion) {
-      setError(dict.lobby.extensionNotFound);
-      return;
-    }
-
-    setSyncing(true);
-    setError("");
-
-    try {
-      const result = await requestExtensionSync({});
-
-      if (!result.ok) {
-        setError(result.error || dict.lobby.syncError);
-      } else if (result.tiktok_username) {
-        const syncResponse = await fetch("/api/profile/sync-likes", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            tiktok_username: result.tiktok_username,
-            likes: result.likes ?? [],
-          }),
-        });
-
-        if (!syncResponse.ok) {
-          const data = await syncResponse.json().catch(() => ({}));
-          const detail = typeof data.detail === "string" && data.detail ? `: ${data.detail}` : "";
-          throw new Error(
-            `${typeof data.error === "string" && data.error ? data.error : dict.lobby.syncError}${detail}`
-          );
-        }
-
-        await fetch("/api/profile", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            tiktok_username: result.tiktok_username,
-            sync_status: "synced",
-          }),
-        });
-        await fetchData();
-      } else {
-        setError("TikTok username was not returned by the extension");
-      }
-      // The lobby reads sync state and username from profiles.
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : dict.lobby.syncError);
-    } finally {
-      setSyncing(false);
-    }
-  }
-
   async function handleStart() {
     setStarting(true);
     setError("");
@@ -247,6 +190,51 @@ export function LobbyView({
     } catch {
       setError("Failed to start game");
       setStarting(false);
+    }
+  }
+
+  async function handleSyncLikes() {
+    if (!currentPlayer || !room || syncing) return;
+    if (!extensionVersion) {
+      setError(dict.lobby.extensionNotFound);
+      return;
+    }
+
+    setSyncing(true);
+    setError("");
+
+    try {
+      const result = await requestExtensionSync({});
+
+      if (!result.ok) {
+        setError(result.error || dict.lobby.syncError);
+      } else if (result.tiktok_username) {
+        const syncResponse = await fetch("/api/profile/sync-likes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            tiktok_username: result.tiktok_username,
+            likes: result.likes ?? [],
+            bookmarks: result.bookmarks ?? [],
+          }),
+        });
+
+        if (!syncResponse.ok) {
+          const data = await syncResponse.json().catch(() => ({}));
+          const detail = typeof data.detail === "string" && data.detail ? `: ${data.detail}` : "";
+          throw new Error(
+            `${typeof data.error === "string" && data.error ? data.error : dict.lobby.syncError}${detail}`
+          );
+        }
+
+        await fetchData();
+      } else {
+        setError("TikTok username was not returned by the extension");
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : dict.lobby.syncError);
+    } finally {
+      setSyncing(false);
     }
   }
 
@@ -336,9 +324,7 @@ export function LobbyView({
                   </span>
                   <div className="flex items-center gap-1">
                     {p.tiktok_username && (
-                      <span className="text-xs text-muted">
-                        @{p.tiktok_username}
-                      </span>
+                      <span className="text-xs text-muted">@{p.tiktok_username}</span>
                     )}
                     <SyncBadge status={p.sync_status} dict={dict} />
                   </div>
@@ -349,7 +335,6 @@ export function LobbyView({
         </div>
       </div>
 
-      {/* Sync button for current player */}
       {currentPlayer && extensionChecked && (
         <div className="w-full max-w-sm">
           {extensionVersion ? (
@@ -361,19 +346,19 @@ export function LobbyView({
                   mySyncStatus === "synced"
                     ? "bg-green-900/30 text-green-400 border border-green-800"
                     : mySyncStatus === "syncing" || syncing
-                    ? "bg-surface-2 text-muted cursor-wait"
-                    : mySyncStatus === "error"
-                    ? "bg-red-900/30 text-red-400 border border-red-800"
-                    : "bg-accent/20 text-accent border border-accent/50 hover:bg-accent/30"
+                      ? "bg-surface-2 text-muted cursor-wait"
+                      : mySyncStatus === "error"
+                        ? "bg-red-900/30 text-red-400 border border-red-800"
+                        : "bg-accent/20 text-accent border border-accent/50 hover:bg-accent/30"
                 }`}
               >
                 {mySyncStatus === "syncing" || syncing
                   ? dict.lobby.syncing
                   : mySyncStatus === "synced"
-                  ? dict.lobby.synced
-                  : mySyncStatus === "error"
-                  ? dict.lobby.syncRetry
-                  : dict.lobby.syncLikes}
+                    ? dict.lobby.synced
+                    : mySyncStatus === "error"
+                      ? dict.lobby.syncRetry
+                      : dict.lobby.syncLikes}
               </button>
               <p className="text-xs text-muted text-center">{dict.lobby.desktopSyncHint}</p>
             </div>

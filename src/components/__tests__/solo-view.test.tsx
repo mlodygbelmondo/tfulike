@@ -44,11 +44,15 @@ function makeLike(overrides: Partial<Record<string, unknown>> = {}) {
     description: "test",
     cover_url: null,
     created_at: "2025-01-01",
+    source: "bookmark",
     ...overrides,
   };
 }
 
 function makeSupabaseMock(likes: Record<string, unknown>[]) {
+  const likedVideos = likes.filter((like) => like.source !== "bookmark");
+  const bookmarkedVideos = likes.filter((like) => like.source === "bookmark");
+
   return {
     auth: {
       getUser: vi.fn().mockResolvedValue({ data: { user: { id: "user-1" } } }),
@@ -56,7 +60,11 @@ function makeSupabaseMock(likes: Record<string, unknown>[]) {
     },
     from: vi.fn((table: string) => {
       if (table === "user_likes") {
-        return makeChain({ data: likes, error: null });
+        return makeChain({ data: likedVideos, error: null });
+      }
+
+      if (table === "user_bookmarks") {
+        return makeChain({ data: bookmarkedVideos, error: null });
       }
 
       return makeChain({ data: null, error: null });
@@ -358,6 +366,39 @@ describe("SoloView", () => {
       expect(refreshedVideo?.getAttribute("src")).toBe(
         "blob:https://example.com/video-1b.mp4"
       );
+    });
+  });
+
+  it("defaults to bookmarks in solo mode and lets the user switch to likes", async () => {
+    vi.mocked(createClient).mockReturnValue(
+      makeSupabaseMock([
+        makeLike({
+          id: "liked-1",
+          tiktok_video_id: "liked-1",
+          video_url: "https://example.com/liked-1.mp4",
+          video_urls: ["https://example.com/liked-1.mp4"],
+          source: "like",
+        }),
+        makeLike({
+          id: "bookmark-1",
+          tiktok_video_id: "bookmark-1",
+          video_url: "https://example.com/bookmark-1.mp4",
+          video_urls: ["https://example.com/bookmark-1.mp4"],
+          source: "bookmark",
+        }),
+      ]) as never
+    );
+
+    render(<SoloView dict={mockDict} />);
+
+    await waitFor(() => {
+      expect(requestVideoDataUri).toHaveBeenCalledWith("https://example.com/bookmark-1.mp4");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /likes/i }));
+
+    await waitFor(() => {
+      expect(requestVideoDataUri).toHaveBeenCalledWith("https://example.com/liked-1.mp4");
     });
   });
 });

@@ -2,6 +2,7 @@
 // Background service worker: coordinates TikTok sync from an open desktop TikTok tab
 // and forwards parsed liked videos to the Supabase Edge Function.
 
+import { normalizeSyncPayload } from "./tiktok-sync.js";
 import { chooseTikTokTab } from "./tiktok-tab.js";
 
 function logDebug(step, details = {}) {
@@ -164,19 +165,20 @@ async function handleFetchVideoData(payload) {
 
 async function handleSyncLikes() {
   try {
-    const { username, likes } = await fetchTikTokLikes();
+    const { username, likes, bookmarks } = await fetchTikTokLikes();
 
     logDebug("sync-likes-ready", {
       username,
       likeCount: likes.length,
+      bookmarkCount: bookmarks.length,
       preview: likes.slice(0, 3).map((like) => summarizeLikeForDebug(like)),
     });
 
-    if (!likes || likes.length === 0) {
+    if ((!likes || likes.length === 0) && (!bookmarks || bookmarks.length === 0)) {
       return {
         ok: false,
         error:
-          "No liked videos found in your open TikTok tab. Make sure TikTok is open on desktop Chrome and you are logged in.",
+          "No liked or bookmarked videos found in your open TikTok tab. Make sure TikTok is open on desktop Chrome and you are logged in.",
       };
     }
 
@@ -184,6 +186,7 @@ async function handleSyncLikes() {
       ok: true,
       tiktok_username: username,
       likes,
+      bookmarks,
     };
   } catch (err) {
     logDebug("sync-likes-failed", {
@@ -378,10 +381,7 @@ async function fetchTikTokLikes() {
     throw new Error(payload.error || "TikTok sync failed inside the TikTok tab.");
   }
 
-  return {
-    username: payload.username,
-    likes: payload.likes || [],
-  };
+  return normalizeSyncPayload(payload);
 }
 
 async function getTikTokTab() {
@@ -489,6 +489,37 @@ async function scrapeTikTokLikesInPage() {
       tz_name: Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Warsaw",
       user_is_login: true,
       secUid,
+      msToken,
+    });
+  }
+
+  function buildBookmarkedVideosUrl({ cursor, msToken }) {
+    return buildTikTokUrl("/api/user/collect/item_list/", {
+      aid: 1988,
+      app_language: navigator.language || "en",
+      app_name: "tiktok_web",
+      browser_language: navigator.language || "en-US",
+      browser_name: "Mozilla",
+      browser_online: navigator.onLine,
+      browser_platform: navigator.platform || "MacIntel",
+      browser_version: navigator.userAgent,
+      channel: "tiktok_web",
+      cookie_enabled: true,
+      count: 30,
+      cursor,
+      device_platform: "web_pc",
+      focus_state: document.hasFocus(),
+      from_page: "user",
+      is_fullscreen: false,
+      is_page_visible: document.visibilityState === "visible",
+      language: navigator.language || "en",
+      os: navigator.platform || "MacIntel",
+      priority_region: "PL",
+      region: "PL",
+      screen_height: window.screen?.height || 1080,
+      screen_width: window.screen?.width || 1920,
+      tz_name: Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Warsaw",
+      user_is_login: true,
       msToken,
     });
   }
@@ -690,49 +721,54 @@ async function scrapeTikTokLikesInPage() {
       };
     }
 
-    const likes = [];
-    let cursor = 0;
-    let hasMore = true;
+    async function collectVideos(step, buildUrl) {
+      const collected = [];
+      let cursor = 0;
+      let hasMore = true;
 
-    for (let page = 0; page < 10 && hasMore; page++) {
-      const likesResult = await fetchTikTokJson(
-        buildLikedVideosUrl({ secUid, cursor, msToken }),
-        "likes"
-      );
-      const likesData = likesResult.data;
+      for (let page = 0; page < 10 && hasMore; page++) {
+        const result = await fetchTikTokJson(buildUrl({ secUid, cursor, msToken }), step);
+        const data = result.data;
 
-      console.log("[DEBUG][tfulike-sync]", "likes-page", {
-        page,
-        status: likesResult.status,
-        signed: likesResult.signed,
-        contentType: likesResult.contentType,
-        textLength: likesResult.textLength,
-        shape: summarizeResponseShape(likesData),
-      });
+        console.log("[DEBUG][tfulike-sync]", `${step}-page`, {
+          page,
+          status: result.status,
+          signed: result.signed,
+          contentType: result.contentType,
+          textLength: result.textLength,
+          shape: summarizeResponseShape(data),
+        });
 
-      if (!Array.isArray(likesData.itemList) || likesData.itemList.length === 0) {
-        break;
-      }
-
-      for (const item of likesData.itemList) {
-        const like = parseTikTokItem(item);
-        if (like) {
-          likes.push(like);
+        if (!Array.isArray(data.itemList) || data.itemList.length === 0) {
+          break;
         }
+
+        for (const item of data.itemList) {
+          const video = parseTikTokItem(item);
+          if (video) {
+            collected.push(video);
+          }
+        }
+
+        hasMore = data.hasMore === true;
+        cursor = data.cursor || cursor + 30;
       }
 
-      hasMore = likesData.hasMore === true;
-      cursor = likesData.cursor || cursor + 30;
+      return collected;
     }
+
+    const likes = await collectVideos("likes", buildLikedVideosUrl);
+    const bookmarks = await collectVideos("bookmarks", buildBookmarkedVideosUrl);
 
     console.log("[DEBUG][tfulike-sync]", "likes-scrape-finished", {
       username,
       secUidResolved: Boolean(secUid),
       totalLikes: likes.length,
+      totalBookmarks: bookmarks.length,
       preview: likes.slice(0, 3).map((like) => _summarizeLikeForDebug(like)),
     });
 
-    return { ok: true, username, likes };
+    return { ok: true, username, likes, bookmarks };
   } catch (error) {
     return {
       ok: false,
