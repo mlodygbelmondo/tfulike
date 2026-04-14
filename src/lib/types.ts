@@ -36,6 +36,21 @@ export interface UserLike {
   created_at: string;
 }
 
+export interface UserBookmark {
+  id: string;
+  user_id: string;
+  tiktok_video_id: string;
+  tiktok_url: string | null;
+  video_url: string | null;
+  video_urls: string[];
+  author_username: string | null;
+  description: string | null;
+  cover_url: string | null;
+  created_at: string;
+}
+
+export type SoloVideoSource = "like" | "bookmark";
+
 export interface RoomSettings {
   max_rounds: number | null; // null = auto (players × 3)
   total_rounds?: number; // set at game start

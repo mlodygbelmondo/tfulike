@@ -6,9 +6,10 @@ import { createClient } from "@/lib/supabase/client";
 import { clearSession } from "@/lib/game";
 import { checkExtensionPresent, requestVideoDataUri, requestVideoRefresh } from "@/lib/extension";
 import type { Dictionary } from "@/lib/dictionaries";
-import type { UserLike } from "@/lib/types";
+import type { SoloVideoSource, UserBookmark, UserLike } from "@/lib/types";
 
 type VideoFitMode = "cover" | "contain";
+type SoloVideo = (UserLike | UserBookmark) & { source: SoloVideoSource };
 
 const VIDEO_COVER_ASPECT_TOLERANCE = 0.14;
 
@@ -18,12 +19,12 @@ function extractVideoIdFromUrl(url: string | null | undefined): string | null {
   return match?.[1] ?? null;
 }
 
-function getLikeCandidates(like: UserLike | null): string[] {
-  if (!like) return [];
+function getLikeCandidates(video: SoloVideo | null): string[] {
+  if (!video) return [];
 
   const rawCandidates = [
-    ...(Array.isArray(like.video_urls) ? like.video_urls : []),
-    like.video_url,
+    ...(Array.isArray(video.video_urls) ? video.video_urls : []),
+    video.video_url,
   ];
 
   return rawCandidates
@@ -34,14 +35,14 @@ function getLikeCandidates(like: UserLike | null): string[] {
     .filter((url): url is string => typeof url === "string");
 }
 
-function pickRandomUnseenIndex(likes: UserLike[], history: number[]): number {
-  if (likes.length === 0) return -1;
+function pickRandomUnseenIndex(videos: SoloVideo[], history: number[]): number {
+  if (videos.length === 0) return -1;
 
-  const unseen = likes
+  const unseen = videos
     .map((_, index) => index)
     .filter((index) => !history.includes(index));
 
-  const pool = unseen.length > 0 ? unseen : likes.map((_, index) => index);
+  const pool = unseen.length > 0 ? unseen : videos.map((_, index) => index);
   return pool[Math.floor(Math.random() * pool.length)] ?? -1;
 }
 
@@ -52,7 +53,8 @@ function shouldTreatMetadataAsBroken(videoWidth: number, videoHeight: number) {
 export function SoloView({ dict }: { dict: Dictionary }) {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
-  const [likes, setLikes] = useState<UserLike[]>([]);
+  const [videos, setVideos] = useState<SoloVideo[]>([]);
+  const [selectedSource, setSelectedSource] = useState<SoloVideoSource>("bookmark");
   const [history, setHistory] = useState<number[]>([]);
   const [historyIndex, setHistoryIndex] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -67,13 +69,31 @@ export function SoloView({ dict }: { dict: Dictionary }) {
   const [controlsHidden, setControlsHidden] = useState(false);
   const [autoAdvanceEnabled, setAutoAdvanceEnabled] = useState(true);
   const [videoCandidateIndex, setVideoCandidateIndex] = useState(0);
-  const currentLike = history.length > 0 ? likes[history[historyIndex] ?? -1] ?? null : null;
+  const filteredVideos = useMemo(
+    () => videos.filter((video) => video.source === selectedSource),
+    [selectedSource, videos]
+  );
+  const filteredVideoIdsKey = useMemo(
+    () => filteredVideos.map((video) => video.id).join(","),
+    [filteredVideos]
+  );
+  const currentLike =
+    history.length > 0 ? filteredVideos[history[historyIndex] ?? -1] ?? null : null;
   const videoCandidates = useMemo(() => getLikeCandidates(currentLike), [currentLike]);
+  const videoCandidatesKey = useMemo(() => videoCandidates.join(","), [videoCandidates]);
   const videoContainerRef = useRef<HTMLDivElement | null>(null);
   const videoElementRef = useRef<HTMLVideoElement | null>(null);
   const resolvedVideoSrcRef = useRef<string | null>(null);
+  const resolvedCandidateRef = useRef<string | null>(null);
   const videoResolveTokenRef = useRef(0);
   const extensionPresentRef = useRef<boolean | null>(null);
+  const brokenCandidatesRef = useRef<Set<string>>(new Set());
+  const retryingCandidateRef = useRef(false);
+  const routerRef = useRef(router);
+
+  useEffect(() => {
+    routerRef.current = router;
+  }, [router]);
 
   const canGoBack = historyIndex > 0;
 
@@ -83,32 +103,36 @@ export function SoloView({ dict }: { dict: Dictionary }) {
     } = await supabase.auth.getUser();
 
     if (!user) {
-      router.push("/");
+      routerRef.current.push("/");
       return;
     }
 
-    const { data, error: likesError } = await supabase
-      .from("user_likes")
-      .select("*")
-      .eq("user_id", user.id);
+    const [{ data: likesData, error: likesError }, { data: bookmarksData, error: bookmarksError }] =
+      await Promise.all([
+        supabase.from("user_likes").select("*").eq("user_id", user.id),
+        supabase.from("user_bookmarks").select("*").eq("user_id", user.id),
+      ]);
 
-    if (likesError) {
-      setError("Failed to load your likes.");
+    if (likesError || bookmarksError) {
+      setError("Failed to load your videos.");
       setLoading(false);
       return;
     }
 
-    const nextLikes = ((data as UserLike[] | null) ?? []).filter(
-      (like) => getLikeCandidates(like).length > 0
-    );
+    const nextVideos = [
+      ...(((bookmarksData as UserBookmark[] | null) ?? []).map((bookmark) => ({
+        ...bookmark,
+        source: "bookmark" as const,
+      })) as SoloVideo[]),
+      ...(((likesData as UserLike[] | null) ?? []).map((like) => ({
+        ...like,
+        source: "like" as const,
+      })) as SoloVideo[]),
+    ].filter((video) => getLikeCandidates(video).length > 0);
 
-    setLikes(nextLikes);
-    if (nextLikes.length > 0) {
-      setHistory([pickRandomUnseenIndex(nextLikes, [])]);
-      setHistoryIndex(0);
-    }
+    setVideos(nextVideos);
     setLoading(false);
-  }, [router, supabase]);
+  }, [supabase]);
 
   useEffect(() => {
     void loadInitialLikes();
@@ -118,6 +142,8 @@ export function SoloView({ dict }: { dict: Dictionary }) {
   }, [loadInitialLikes]);
 
   useEffect(() => {
+    brokenCandidatesRef.current = new Set();
+    retryingCandidateRef.current = false;
     setVideoCandidateIndex(0);
     setVideoLoadFailed(false);
     setVideoRefreshing(false);
@@ -125,7 +151,16 @@ export function SoloView({ dict }: { dict: Dictionary }) {
     setVideoSrc(null);
     setSoundEnabled(true);
     setVideoFitMode("contain");
-  }, [videoCandidates]);
+  }, [videoCandidatesKey]);
+
+  useEffect(() => {
+    if (loading) return;
+
+    setHistory(
+      filteredVideos.length === 0 ? [] : [pickRandomUnseenIndex(filteredVideos, [])]
+    );
+    setHistoryIndex(0);
+  }, [filteredVideoIdsKey, loading]);
 
   useEffect(() => {
     return () => {
@@ -181,8 +216,10 @@ export function SoloView({ dict }: { dict: Dictionary }) {
         video_urls: refreshed,
       };
 
-      setLikes((currentLikes) =>
-        currentLikes.map((like) => (like.id === currentLike.id ? replacement : like))
+      setVideos((currentVideos) =>
+        currentVideos.map((video) =>
+          video.id === currentLike.id ? { ...replacement, source: currentLike.source } : video
+        )
       );
     } finally {
       setVideoRefreshing(false);
@@ -200,6 +237,7 @@ export function SoloView({ dict }: { dict: Dictionary }) {
     }
 
     if (!candidate) {
+      resolvedCandidateRef.current = null;
       setVideoResolving(false);
       setVideoSrc(null);
       return;
@@ -217,6 +255,7 @@ export function SoloView({ dict }: { dict: Dictionary }) {
         }
 
         resolvedVideoSrcRef.current = blobUrl;
+        resolvedCandidateRef.current = candidate;
         setVideoSrc(blobUrl);
         setVideoResolving(false);
       })
@@ -257,12 +296,12 @@ export function SoloView({ dict }: { dict: Dictionary }) {
       return;
     }
 
-    const nextLikeIndex = pickRandomUnseenIndex(likes, history);
+    const nextLikeIndex = pickRandomUnseenIndex(filteredVideos, history);
     if (nextLikeIndex === -1) return;
 
     setHistory((current) => [...current, nextLikeIndex]);
     setHistoryIndex((current) => current + 1);
-  }, [history, historyIndex, likes]);
+  }, [filteredVideos, history, historyIndex]);
 
   const handlePrevious = useCallback(() => {
     if (!canGoBack) return;
@@ -328,8 +367,22 @@ export function SoloView({ dict }: { dict: Dictionary }) {
   if (!currentLike) {
     return (
       <main className="relative left-1/2 flex h-dvh max-h-dvh w-screen -translate-x-1/2 flex-col items-center justify-center overflow-hidden gap-4 p-6 text-center">
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <SourceButton
+            active={selectedSource === "bookmark"}
+            label={dict.game.soloSourceBookmarks}
+            onClick={() => setSelectedSource("bookmark")}
+          />
+          <SourceButton
+            active={selectedSource === "like"}
+            label={dict.game.soloSourceLikes}
+            onClick={() => setSelectedSource("like")}
+          />
+        </div>
         <p className="max-w-md text-sm text-muted">
-          {dict.game.soloEmpty}
+          {selectedSource === "bookmark"
+            ? dict.game.soloEmptyBookmarks
+            : dict.game.soloEmptyLikes}
         </p>
         <button
           type="button"
@@ -353,6 +406,7 @@ export function SoloView({ dict }: { dict: Dictionary }) {
         {videoSrc ? (
           <>
             <video
+              key={`bg-${videoSrc}`}
               aria-hidden="true"
               tabIndex={-1}
               src={videoSrc}
@@ -363,6 +417,7 @@ export function SoloView({ dict }: { dict: Dictionary }) {
             />
             <div className="pointer-events-none absolute inset-0 bg-black/35" />
             <video
+              key={`fg-${videoSrc}`}
               ref={videoElementRef}
               src={videoSrc}
               className={
@@ -394,9 +449,21 @@ export function SoloView({ dict }: { dict: Dictionary }) {
               onLoadedMetadata={(event) => {
                 const element = event.currentTarget;
                 const container = videoContainerRef.current;
+                const currentCandidate = resolvedCandidateRef.current;
 
                 if (shouldTreatMetadataAsBroken(element.videoWidth, element.videoHeight)) {
-                  setVideoSrc(null);
+                  if (currentCandidate) {
+                    if (brokenCandidatesRef.current.has(currentCandidate)) {
+                      retryingCandidateRef.current = false;
+                      setVideoResolving(false);
+                      setVideoLoadFailed(true);
+                      return;
+                    }
+
+                    brokenCandidatesRef.current.add(currentCandidate);
+                  }
+
+                  retryingCandidateRef.current = true;
                   setVideoLoadFailed(false);
                   advanceToNextCandidate();
                   return;
@@ -425,6 +492,11 @@ export function SoloView({ dict }: { dict: Dictionary }) {
                 setVideoFitMode(nextFitMode);
               }}
               onError={() => {
+                if (retryingCandidateRef.current) {
+                  retryingCandidateRef.current = false;
+                  return;
+                }
+
                 setVideoSrc(null);
                 setVideoLoadFailed(true);
                 advanceToNextCandidate();
@@ -458,6 +530,16 @@ export function SoloView({ dict }: { dict: Dictionary }) {
         ) : (
           <div className="absolute inset-x-0 bottom-0 z-20 p-4 sm:p-6">
             <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-center gap-3 rounded-3xl bg-black/60 p-3 backdrop-blur-md">
+              <SourceButton
+                active={selectedSource === "bookmark"}
+                label={dict.game.soloSourceBookmarks}
+                onClick={() => setSelectedSource("bookmark")}
+              />
+              <SourceButton
+                active={selectedSource === "like"}
+                label={dict.game.soloSourceLikes}
+                onClick={() => setSelectedSource("like")}
+              />
               <button
                 type="button"
                 onClick={() => setAutoAdvanceEnabled((current) => !current)}
@@ -519,5 +601,30 @@ export function SoloView({ dict }: { dict: Dictionary }) {
         )}
       </div>
     </main>
+  );
+}
+
+function SourceButton({
+  active,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`min-h-11 rounded-full px-4 text-sm font-semibold transition ${
+        active
+          ? "bg-white text-black"
+          : "border border-white/20 text-white hover:border-white/40"
+      }`}
+    >
+      {label}
+    </button>
   );
 }

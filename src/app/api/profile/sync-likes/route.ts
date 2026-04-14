@@ -12,6 +12,8 @@ interface LikePayload {
   cover_url?: string;
 }
 
+type VideoCollectionTable = "user_likes" | "user_bookmarks";
+
 function normalizeVideoUrls(like: LikePayload): string[] {
   const candidateList = [
     ...(Array.isArray(like.video_urls) ? like.video_urls : []),
@@ -31,6 +33,36 @@ function normalizeVideoUrls(like: LikePayload): string[] {
   return deduped;
 }
 
+async function upsertVideoCollection(
+  adminSupabase: ReturnType<typeof createAdminClient>,
+  table: VideoCollectionTable,
+  userId: string,
+  videos: LikePayload[]
+) {
+  if (videos.length === 0) {
+    return { error: null as { message: string } | null };
+  }
+
+  const rows = videos.map((video) => {
+    const videoUrls = normalizeVideoUrls(video);
+    return {
+      user_id: userId,
+      tiktok_video_id: video.tiktok_video_id,
+      tiktok_url: video.tiktok_url ?? null,
+      video_url: videoUrls[0] ?? null,
+      video_urls: videoUrls,
+      author_username: video.author_username ?? null,
+      description: video.description ?? null,
+      cover_url: video.cover_url ?? null,
+    };
+  });
+
+  return adminSupabase.from(table).upsert(rows, {
+    onConflict: "user_id,tiktok_video_id",
+    ignoreDuplicates: false,
+  });
+}
+
 export async function POST(request: Request) {
   try {
     const supabase = await createClient();
@@ -47,6 +79,7 @@ export async function POST(request: Request) {
     const tiktokUsername =
       typeof body?.tiktok_username === "string" ? body.tiktok_username.trim() : "";
     const likes: LikePayload[] = Array.isArray(body?.likes) ? body.likes : null;
+    const bookmarks: LikePayload[] = Array.isArray(body?.bookmarks) ? body.bookmarks : [];
 
     if (!tiktokUsername || !likes) {
       return NextResponse.json(
@@ -74,25 +107,18 @@ export async function POST(request: Request) {
       })
       .eq("id", user.id);
 
-    if (likes.length > 0) {
-      const rows = likes.map((like) => {
-        const videoUrls = normalizeVideoUrls(like);
-        return {
-          user_id: user.id,
-          tiktok_video_id: like.tiktok_video_id,
-          tiktok_url: like.tiktok_url ?? null,
-          video_url: videoUrls[0] ?? null,
-          video_urls: videoUrls,
-          author_username: like.author_username ?? null,
-          description: like.description ?? null,
-          cover_url: like.cover_url ?? null,
-        };
-      });
+    const collections: Array<{ table: VideoCollectionTable; label: string; videos: LikePayload[] }> = [
+      { table: "user_likes", label: "likes", videos: likes },
+      { table: "user_bookmarks", label: "bookmarks", videos: bookmarks },
+    ];
 
-      const { error: upsertError } = await adminSupabase.from("user_likes").upsert(rows, {
-        onConflict: "user_id,tiktok_video_id",
-        ignoreDuplicates: false,
-      });
+    for (const collection of collections) {
+      const { error: upsertError } = await upsertVideoCollection(
+        adminSupabase,
+        collection.table,
+        user.id,
+        collection.videos
+      );
 
       if (upsertError) {
         await adminSupabase
@@ -105,7 +131,7 @@ export async function POST(request: Request) {
 
         return NextResponse.json(
           {
-            error: "Failed to upsert likes",
+            error: `Failed to upsert ${collection.label}`,
             detail: upsertError.message,
           },
           { status: 500 }
@@ -113,9 +139,10 @@ export async function POST(request: Request) {
       }
     }
 
-    const syncedAt = new Date().toISOString();
+    const hasLikes = likes.length > 0;
+    const syncedAt = hasLikes ? new Date().toISOString() : null;
     const syncedUpdates = {
-      sync_status: "synced",
+      sync_status: hasLikes ? "synced" : "idle",
       sync_error: null,
       tiktok_username: tiktokUsername,
       synced_at: syncedAt,
@@ -126,7 +153,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       ok: true,
-      synced_count: likes.length,
+      synced_count: likes.length + bookmarks.length,
       tiktok_username: tiktokUsername,
     });
   } catch (err) {

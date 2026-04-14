@@ -87,9 +87,7 @@ export async function POST(
       if (unsyncedProfiles.length > 0) {
         const names = unsyncedProfiles.map((p) => p.nickname);
         return NextResponse.json(
-          {
-            error: `Players have not synced their TikTok likes: ${names.join(", ")}`,
-          },
+          { error: `Players are not ready yet: ${names.join(", ")}` },
           { status: 400 }
         );
       }
@@ -148,8 +146,11 @@ export async function POST(
     }
 
     if (likesByPlayer.size === 0) {
+      const names = players.filter((p) => p.user_id).map((p) => p.nickname);
       return NextResponse.json(
-        { error: "No synced likes found. All players must sync their TikTok likes first." },
+        {
+          error: `${names.join(", ")} ${names.length === 1 ? "has" : "have"} no synced likes. Please sync again.`,
+        },
         { status: 400 }
       );
     }
@@ -162,7 +163,7 @@ export async function POST(
       const names = playersWithoutLikes.map((p) => p.nickname);
       return NextResponse.json(
         {
-          error: `${names.join(", ")} ${names.length === 1 ? "has" : "have"} no likes. Please sync again.`,
+          error: `${names.join(", ")} ${names.length === 1 ? "has" : "have"} no synced likes. Please sync again.`,
         },
         { status: 400 }
       );

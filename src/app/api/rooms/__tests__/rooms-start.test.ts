@@ -182,6 +182,7 @@ describe("POST /api/rooms/[pin]/start", () => {
     expect(res.status).toBe(400);
     const json = await res.json();
     expect(json.error).toContain("Bob");
+    expect(json.error).toMatch(/not ready/i);
   });
 
   it("returns 400 when no likes found in user_likes", async () => {
@@ -218,7 +219,7 @@ describe("POST /api/rooms/[pin]/start", () => {
     const res = await POST(makeRequest(), { params });
     expect(res.status).toBe(400);
     const json = await res.json();
-    expect(json.error).toMatch(/synced likes/i);
+    expect(json.error).toMatch(/no synced likes/i);
   });
 
   it("starts game successfully using global user_likes", async () => {
@@ -281,6 +282,48 @@ describe("POST /api/rooms/[pin]/start", () => {
     const json = await res.json();
     expect(json.round).toBeDefined();
     expect(json.totalRounds).toBeGreaterThan(0);
+  });
+
+  it("returns actionable names when synced players still have no likes", async () => {
+    const room = {
+      id: "r1",
+      pin: "1234",
+      status: "lobby",
+      host_player_id: "host-1",
+      settings: { max_rounds: null },
+    };
+
+    mockClients({
+      userId: HOST_USER_ID,
+      roomResult: { data: room, error: null },
+      adminResults: [
+        {
+          data: [
+            { id: "host-1", user_id: HOST_USER_ID, nickname: "Alice", sync_status: "synced" },
+            { id: "p2", user_id: OTHER_USER_ID, nickname: "Bob", sync_status: "synced" },
+          ],
+          error: null,
+        },
+        {
+          data: [
+            { id: HOST_USER_ID, sync_status: "synced", nickname: "Alice" },
+            { id: OTHER_USER_ID, sync_status: "synced", nickname: "Bob" },
+          ],
+          error: null,
+        },
+        {
+          data: [],
+          error: null,
+        },
+      ],
+    });
+
+    const res = await POST(makeRequest(), { params });
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toContain("Alice");
+    expect(json.error).toContain("Bob");
+    expect(json.error).toMatch(/no synced likes/i);
   });
 
   it("returns 400 when a player has no likes in user_likes", async () => {

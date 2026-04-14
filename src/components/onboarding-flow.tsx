@@ -8,6 +8,7 @@ import type { SyncStatus } from "@/lib/types";
 import type { Dictionary } from "@/lib/dictionaries";
 import {
   checkExtensionPresent,
+  normalizeExtensionSyncError,
   requestExtensionSync,
 } from "@/lib/extension";
 
@@ -105,6 +106,7 @@ export function OnboardingFlow({ lang, dict, initialProfile }: OnboardingFlowPro
           body: JSON.stringify({
             tiktok_username: result.tiktok_username,
             likes: result.likes ?? [],
+            bookmarks: result.bookmarks ?? [],
           }),
         });
 
@@ -117,25 +119,15 @@ export function OnboardingFlow({ lang, dict, initialProfile }: OnboardingFlowPro
         }
 
         setSyncStatus("synced");
-
-        // Persist the resolved TikTok username and profile sync status.
-        await fetch("/api/profile", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            sync_status: "synced",
-            ...(result.tiktok_username
-              ? { tiktok_username: result.tiktok_username }
-              : {}),
-          }),
-        });
       } else {
         setSyncStatus("error");
-        setSyncError(result.error || d.syncError);
+        setSyncError(normalizeExtensionSyncError(result.error) || d.syncError);
       }
     } catch (err: unknown) {
       setSyncStatus("error");
-      setSyncError(err instanceof Error ? err.message : d.syncError);
+      setSyncError(
+        err instanceof Error ? normalizeExtensionSyncError(err.message) || d.syncError : d.syncError
+      );
     }
   }
 

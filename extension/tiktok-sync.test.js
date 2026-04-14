@@ -5,6 +5,7 @@ import {
   buildUserDetailUrl,
   extractUsernameFromUserDetail,
   extractSecUid,
+  normalizeSyncPayload,
   parseTikTokItem,
   summarizeResponseShape,
 } from "./tiktok-sync.js";
@@ -88,6 +89,21 @@ describe("parseTikTokItem", () => {
       tiktok_video_id: "123",
       tiktok_url: "https://www.tiktok.com/@author1/video/123",
       video_url: "https://cdn.example.com/play.mp4",
+    });
+  });
+});
+
+describe("normalizeSyncPayload", () => {
+  it("defaults missing bookmark and like collections to empty arrays", () => {
+    expect(
+      normalizeSyncPayload({
+        username: "cool.user",
+        likes: [{ tiktok_video_id: "123" }],
+      })
+    ).toEqual({
+      username: "cool.user",
+      likes: [{ tiktok_video_id: "123" }],
+      bookmarks: [],
     });
   });
 });

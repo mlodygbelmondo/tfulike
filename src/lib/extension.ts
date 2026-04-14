@@ -16,7 +16,29 @@ export interface ExtensionSyncResponse {
     description?: string;
     cover_url?: string;
   }>;
+  bookmarks?: Array<{
+    tiktok_video_id: string;
+    tiktok_url?: string;
+    video_url?: string;
+    video_urls?: string[];
+    author_username?: string;
+    description?: string;
+    cover_url?: string;
+  }>;
   error?: string;
+}
+
+export function normalizeExtensionSyncError(error?: string): string | undefined {
+  if (!error) return error;
+
+  if (
+    error.includes("Cannot access contents of the page") ||
+    error.includes("must request permission to access the respective host")
+  ) {
+    return "Couldn't access your TikTok tab. Make sure TikTok is open in this Chrome profile, the tab is fully loaded, you're logged in, and the extension is allowed on tiktok.com, then try again.";
+  }
+
+  return error;
 }
 
 export interface VideoRefreshRequest {
@@ -115,7 +137,15 @@ export function requestExtensionSync(
       if (event.data?.type === "TAPUJEMY_SYNC_RESPONSE") {
         clearTimeout(timeout);
         window.removeEventListener("message", handler);
-        resolve(event.data.payload || { ok: false, error: "Empty response" });
+        const payload = event.data.payload as ExtensionSyncResponse | undefined;
+        resolve(
+          payload
+            ? {
+                ...payload,
+                error: normalizeExtensionSyncError(payload.error),
+              }
+            : { ok: false, error: "Empty response" }
+        );
       }
     }
 

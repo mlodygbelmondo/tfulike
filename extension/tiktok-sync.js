@@ -121,3 +121,11 @@ export function parseTikTokItem(item) {
     cover_url: item.video?.cover || item.video?.originCover || null,
   };
 }
+
+export function normalizeSyncPayload(payload) {
+  return {
+    username: payload?.username,
+    likes: Array.isArray(payload?.likes) ? payload.likes : [],
+    bookmarks: Array.isArray(payload?.bookmarks) ? payload.bookmarks : [],
+  };
+}

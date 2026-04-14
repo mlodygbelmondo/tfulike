@@ -171,4 +171,189 @@ describe("POST /api/profile/sync-likes", () => {
       })
     );
   });
+
+  it("syncs bookmarks alongside likes when provided", async () => {
+    const profileSelect = makeChain({ data: { id: "user-1" }, error: null });
+    const profileSyncingUpdate = makeChain({ data: null, error: null });
+    const likesUpsert = makeChain({ data: null, error: null }) as Record<
+      string,
+      ReturnType<typeof vi.fn>
+    >;
+    const bookmarksUpsert = makeChain({ data: null, error: null }) as Record<
+      string,
+      ReturnType<typeof vi.fn>
+    >;
+    const profileSyncedUpdate = makeChain({ data: null, error: null });
+    const playerUpdate = makeChain({ data: null, error: null });
+
+    const likesUpsertSpy = vi.fn(() => likesUpsert);
+    likesUpsert.upsert = likesUpsertSpy;
+
+    const bookmarksUpsertSpy = vi.fn(() => bookmarksUpsert);
+    bookmarksUpsert.upsert = bookmarksUpsertSpy;
+
+    const profileSyncingUpdateSpy = vi.fn(() => profileSyncingUpdate);
+    (profileSyncingUpdate as Record<string, ReturnType<typeof vi.fn>>).update =
+      profileSyncingUpdateSpy;
+
+    const profileSyncedUpdateSpy = vi.fn(() => profileSyncedUpdate);
+    (profileSyncedUpdate as Record<string, ReturnType<typeof vi.fn>>).update =
+      profileSyncedUpdateSpy;
+
+    const playerUpdateSpy = vi.fn(() => playerUpdate);
+    (playerUpdate as Record<string, ReturnType<typeof vi.fn>>).update = playerUpdateSpy;
+
+    vi.mocked(createClient).mockResolvedValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({ data: { user: { id: "user-1" } } }),
+      },
+    } as never);
+
+    vi.mocked(createAdminClient).mockReturnValue({
+      from: vi
+        .fn()
+        .mockReturnValueOnce(profileSelect)
+        .mockReturnValueOnce(profileSyncingUpdate)
+        .mockReturnValueOnce(likesUpsert)
+        .mockReturnValueOnce(bookmarksUpsert)
+        .mockReturnValueOnce(profileSyncedUpdate)
+        .mockReturnValueOnce(playerUpdate),
+    } as never);
+
+    const response = await POST(
+      makeRequest({
+        tiktok_username: "lider_drenazu",
+        likes: [
+          {
+            tiktok_video_id: "liked-video-1",
+            tiktok_url: "https://www.tiktok.com/@lider_drenazu/video/liked-video-1",
+            video_url: "https://cdn.example.com/liked-video-1.mp4",
+            video_urls: ["https://cdn.example.com/liked-video-1.mp4"],
+            author_username: "lider_drenazu",
+          },
+        ],
+        bookmarks: [
+          {
+            tiktok_video_id: "bookmark-video-1",
+            tiktok_url: "https://www.tiktok.com/@lider_drenazu/video/bookmark-video-1",
+            video_url: "https://cdn.example.com/bookmark-video-1.mp4",
+            video_urls: ["https://cdn.example.com/bookmark-video-1.mp4"],
+            author_username: "lider_drenazu",
+          },
+        ],
+      })
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      ok: true,
+      synced_count: 2,
+      tiktok_username: "lider_drenazu",
+    });
+
+    expect(likesUpsertSpy).toHaveBeenCalledTimes(1);
+    expect(bookmarksUpsertSpy).toHaveBeenCalledTimes(1);
+    expect(bookmarksUpsertSpy).toHaveBeenCalledWith(
+      [
+        expect.objectContaining({
+          user_id: "user-1",
+          tiktok_video_id: "bookmark-video-1",
+          author_username: "lider_drenazu",
+        }),
+      ],
+      {
+        onConflict: "user_id,tiktok_video_id",
+        ignoreDuplicates: false,
+      }
+    );
+  });
+
+  it("keeps profile and player idle when only bookmarks were synced", async () => {
+    const profileSelect = makeChain({ data: { id: "user-1" }, error: null });
+    const profileSyncingUpdate = makeChain({ data: null, error: null });
+    const bookmarksUpsert = makeChain({ data: null, error: null }) as Record<
+      string,
+      ReturnType<typeof vi.fn>
+    >;
+    const profileFinalUpdate = makeChain({ data: null, error: null });
+    const playerUpdate = makeChain({ data: null, error: null });
+
+    const bookmarksUpsertSpy = vi.fn(() => bookmarksUpsert);
+    bookmarksUpsert.upsert = bookmarksUpsertSpy;
+
+    const profileSyncingUpdateSpy = vi.fn(() => profileSyncingUpdate);
+    (profileSyncingUpdate as Record<string, ReturnType<typeof vi.fn>>).update =
+      profileSyncingUpdateSpy;
+
+    const profileFinalUpdateSpy = vi.fn(() => profileFinalUpdate);
+    (profileFinalUpdate as Record<string, ReturnType<typeof vi.fn>>).update =
+      profileFinalUpdateSpy;
+
+    const playerUpdateSpy = vi.fn(() => playerUpdate);
+    (playerUpdate as Record<string, ReturnType<typeof vi.fn>>).update = playerUpdateSpy;
+
+    vi.mocked(createClient).mockResolvedValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({ data: { user: { id: "user-1" } } }),
+      },
+    } as never);
+
+    vi.mocked(createAdminClient).mockReturnValue({
+      from: vi
+        .fn()
+        .mockReturnValueOnce(profileSelect)
+        .mockReturnValueOnce(profileSyncingUpdate)
+        .mockReturnValueOnce(bookmarksUpsert)
+        .mockReturnValueOnce(profileFinalUpdate)
+        .mockReturnValueOnce(playerUpdate),
+    } as never);
+
+    const response = await POST(
+      makeRequest({
+        tiktok_username: "lider_drenazu",
+        likes: [],
+        bookmarks: [
+          {
+            tiktok_video_id: "bookmark-video-1",
+            tiktok_url: "https://www.tiktok.com/@lider_drenazu/video/bookmark-video-1",
+            video_url: "https://cdn.example.com/bookmark-video-1.mp4",
+            video_urls: ["https://cdn.example.com/bookmark-video-1.mp4"],
+            author_username: "lider_drenazu",
+          },
+        ],
+      })
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      ok: true,
+      synced_count: 1,
+      tiktok_username: "lider_drenazu",
+    });
+
+    expect(bookmarksUpsertSpy).toHaveBeenCalledTimes(1);
+    expect(profileSyncingUpdateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sync_status: "syncing",
+        sync_error: null,
+        tiktok_username: "lider_drenazu",
+      })
+    );
+    expect(profileFinalUpdateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sync_status: "idle",
+        sync_error: null,
+        tiktok_username: "lider_drenazu",
+        synced_at: null,
+      })
+    );
+    expect(playerUpdateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sync_status: "idle",
+        sync_error: null,
+        tiktok_username: "lider_drenazu",
+        synced_at: null,
+      })
+    );
+  });
 });
