@@ -12,6 +12,7 @@ vi.mock("@/lib/extension", () => ({
   checkExtensionPresent: vi.fn(() => Promise.resolve(null)),
   requestVideoRefresh: vi.fn(),
   requestVideoDataUri: vi.fn(),
+  requestVideoCacheUpload: vi.fn(),
 }));
 
 import { createClient } from "@/lib/supabase/client";
@@ -19,6 +20,7 @@ import {
   checkExtensionPresent,
   requestVideoRefresh,
   requestVideoDataUri,
+  requestVideoCacheUpload,
 } from "@/lib/extension";
 
 function makeChain(resolveValue: {
@@ -937,5 +939,112 @@ describe("GamePlayView", () => {
       ) as HTMLVideoElement | null;
       expect(refreshedVideo?.getAttribute("src")).toBe("blob:video-b");
     });
+  });
+
+  it("plays cached videos via a signed storage URL without the extension", async () => {
+    storeSession("p1", "1234");
+
+    const signedUrl = "https://storage.example.com/signed/video-1.mp4";
+    const supabase = makeSupabaseMock({
+      room: makeRoom(),
+      players: [makePlayer({ is_host: false })],
+      round: makeRound(),
+      video: makeVideo({
+        cache_status: "ready",
+        storage_path: "r1/video-1.mp4",
+      }),
+    });
+
+    vi.mocked(createClient).mockReturnValue(supabase as never);
+    vi.mocked(checkExtensionPresent).mockResolvedValue(null);
+
+    const fetchSpy = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/videos/video-1/cache") {
+        return new Response(JSON.stringify({ url: signedUrl }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { container } = render(
+      <GamePlayView lang="pl" pin="1234" dict={mockDict} />,
+    );
+
+    await waitFor(() => {
+      const videoElement = container.querySelector(
+        'video:not([aria-hidden="true"])',
+      ) as HTMLVideoElement | null;
+      expect(videoElement).not.toBeNull();
+      expect(videoElement?.getAttribute("src")).toBe(signedUrl);
+    });
+
+    expect(requestVideoDataUri).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it("host with extension seeds the storage cache for an uncached video", async () => {
+    storeSession("p1", "1234");
+
+    const uploadSignedUrl = "https://storage.example.com/upload?token=abc";
+    const supabase = makeSupabaseMock({
+      room: makeRoom(),
+      players: [makePlayer({ is_host: true })],
+      round: makeRound(),
+      video: makeVideo({ cache_status: "pending" }),
+    });
+
+    vi.mocked(createClient).mockReturnValue(supabase as never);
+    vi.mocked(checkExtensionPresent).mockResolvedValue("1.0.0");
+    vi.mocked(requestVideoCacheUpload).mockResolvedValue({
+      ok: true,
+      bytes: 1024,
+    });
+
+    const fetchSpy = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/videos/video-1/cache" && init?.method === "POST") {
+        const body = JSON.parse(String(init.body)) as { action?: string };
+        if (body.action === "upload-url") {
+          return new Response(
+            JSON.stringify({
+              upload: {
+                signedUrl: uploadSignedUrl,
+                token: "abc",
+                path: "r1/video-1.mp4",
+              },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        return new Response(
+          JSON.stringify({ video: makeVideo({ cache_status: "ready" }) }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    render(<GamePlayView lang="pl" pin="1234" dict={mockDict} />);
+
+    await waitFor(() => {
+      expect(requestVideoCacheUpload).toHaveBeenCalledWith({
+        video_url: "https://example.com/video.mp4",
+        upload_url: uploadSignedUrl,
+      });
+      expect(fetchSpy).toHaveBeenCalledWith(
+        "/api/videos/video-1/cache",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ action: "complete" }),
+        }),
+      );
+    });
+
+    vi.unstubAllGlobals();
   });
 });

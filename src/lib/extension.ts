@@ -205,6 +205,62 @@ export function requestVideoRefresh(
   });
 }
 
+export interface VideoCacheUploadRequest {
+  video_url: string;
+  upload_url: string;
+}
+
+export interface VideoCacheUploadResponse {
+  ok: boolean;
+  bytes?: number;
+  content_type?: string;
+  error?: string;
+}
+
+/**
+ * Request the extension to fetch a TikTok CDN video and upload it directly to
+ * a signed storage upload URL, so all players can stream the cached copy.
+ */
+export function requestVideoCacheUpload(
+  request: VideoCacheUploadRequest
+): Promise<VideoCacheUploadResponse> {
+  return new Promise((resolve) => {
+    if (typeof window === "undefined") {
+      resolve({ ok: false, error: "Not in browser" });
+      return;
+    }
+
+    const requestId = createRequestId();
+
+    const timeout = setTimeout(() => {
+      window.removeEventListener("message", handler);
+      resolve({ ok: false, error: "Extension did not respond (timeout)" });
+    }, 120_000); // fetch + upload of a full video can take a while
+
+    function handler(event: MessageEvent) {
+      if (event.source !== window) return;
+      if (
+        event.data?.type === "TAPUJEMY_CACHE_VIDEO_RESPONSE" &&
+        event.data?.requestId === requestId
+      ) {
+        clearTimeout(timeout);
+        window.removeEventListener("message", handler);
+        resolve(event.data.payload || { ok: false, error: "Empty response" });
+      }
+    }
+
+    window.addEventListener("message", handler);
+    window.postMessage(
+      {
+        type: "TAPUJEMY_CACHE_VIDEO_REQUEST",
+        requestId,
+        payload: request,
+      },
+      "*"
+    );
+  });
+}
+
 /**
  * Request the extension to fetch a raw video URL on the client's network stack
  * and return a Blob URL that the page can play without direct TikTok requests.

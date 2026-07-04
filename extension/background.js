@@ -95,7 +95,95 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       );
     return true;
   }
+
+  if (message.type === "CACHE_VIDEO") {
+    handleCacheVideo(message.payload)
+      .then((result) => sendResponse(result))
+      .catch((err) =>
+        sendResponse({ ok: false, error: String(err.message || err) })
+      );
+    return true;
+  }
 });
+
+async function handleCacheVideo(payload) {
+  const videoUrl = payload?.video_url;
+  const uploadUrl = payload?.upload_url;
+
+  if (typeof videoUrl !== "string" || !videoUrl.trim()) {
+    return { ok: false, error: "Missing video URL" };
+  }
+  if (typeof uploadUrl !== "string" || !uploadUrl.trim()) {
+    return { ok: false, error: "Missing upload URL" };
+  }
+
+  let normalizedVideoUrl;
+  let normalizedUploadUrl;
+  try {
+    normalizedVideoUrl = new URL(videoUrl);
+    normalizedUploadUrl = new URL(uploadUrl);
+  } catch {
+    return { ok: false, error: "Invalid URL" };
+  }
+
+  if (
+    normalizedVideoUrl.protocol !== "https:" ||
+    normalizedUploadUrl.protocol !== "https:"
+  ) {
+    return { ok: false, error: "Only HTTPS URLs are supported" };
+  }
+
+  logDebug("cache-video-fetch-start", {
+    host: normalizedVideoUrl.host,
+    path: normalizedVideoUrl.pathname,
+  });
+
+  const response = await fetch(normalizedVideoUrl.toString(), {
+    headers: {
+      Referer: "https://www.tiktok.com/",
+      "User-Agent":
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    },
+  });
+
+  if (!response.ok) {
+    logDebug("cache-video-fetch-failed", {
+      status: response.status,
+      host: normalizedVideoUrl.host,
+    });
+    return { ok: false, error: `Fetch failed with status ${response.status}` };
+  }
+
+  const buffer = await response.arrayBuffer();
+  const mimeType = response.headers.get("content-type") || "video/mp4";
+
+  const uploadResponse = await fetch(normalizedUploadUrl.toString(), {
+    method: "PUT",
+    headers: {
+      "Content-Type": mimeType,
+      "x-upsert": "true",
+    },
+    body: buffer,
+  });
+
+  if (!uploadResponse.ok) {
+    logDebug("cache-video-upload-failed", {
+      status: uploadResponse.status,
+      host: normalizedUploadUrl.host,
+    });
+    return {
+      ok: false,
+      error: `Upload failed with status ${uploadResponse.status}`,
+    };
+  }
+
+  logDebug("cache-video-upload-success", {
+    bytes: buffer.byteLength,
+    mimeType,
+  });
+
+  return { ok: true, bytes: buffer.byteLength, content_type: mimeType };
+}
 
 async function handleFetchVideoData(payload) {
   const url = payload?.url;

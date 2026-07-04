@@ -118,6 +118,38 @@
         }
       }
 
+    if (type === "TAPUJEMY_CACHE_VIDEO_REQUEST") {
+      try {
+        chrome.runtime.sendMessage(
+          {
+            type: "CACHE_VIDEO",
+            payload: payload,
+          },
+          (response) => {
+            const runtimeError = chrome.runtime.lastError;
+            if (runtimeError) {
+                postResponse("TAPUJEMY_CACHE_VIDEO_RESPONSE", {
+                  ok: false,
+                  error: "Extension reloaded. Refresh the page and try again.",
+                }, requestId);
+                return;
+              }
+
+              postResponse(
+                "TAPUJEMY_CACHE_VIDEO_RESPONSE",
+                response || { ok: false, error: "Empty response from extension" },
+                requestId
+              );
+            }
+          );
+        } catch {
+        postResponse("TAPUJEMY_CACHE_VIDEO_RESPONSE", {
+          ok: false,
+          error: "Extension reloaded. Refresh the page and try again.",
+        }, requestId);
+        }
+      }
+
     if (type === "TAPUJEMY_EXTENSION_CHECK") {
       const version = getExtensionVersion();
       if (version) {

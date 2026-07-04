@@ -11,6 +11,7 @@ import {
   requestVideoRefresh,
   checkExtensionPresent,
   requestVideoDataUri,
+  requestVideoCacheUpload,
 } from "@/lib/extension";
 import type {
   PlaybackMode,
@@ -167,6 +168,9 @@ export function GamePlayView({
   const currentVideoIdRef = useRef<string | null>(null);
   const fetchRoundTokenRef = useRef(0);
   const hostRefreshAttemptedRef = useRef<Set<string>>(new Set());
+  const cacheSeedAttemptedRef = useRef<Set<string>>(new Set());
+  const cacheSrcActiveRef = useRef(false);
+  const [cachePlaybackFailed, setCachePlaybackFailed] = useState(false);
 
   const videoSourceKey = [
     video?.id ?? "",
@@ -413,6 +417,8 @@ export function GamePlayView({
     setVideoFitMode("contain");
     setSoundEnabled(true);
     setVideoSrc(null);
+    setCachePlaybackFailed(false);
+    cacheSrcActiveRef.current = false;
 
     logVideoDebug("video-candidates-prepared", {
       videoId: video?.id ?? null,
@@ -502,6 +508,152 @@ export function GamePlayView({
     [],
   );
 
+  // Cache-first playback: when the video has been uploaded to storage, every
+  // player streams the cached copy via a signed URL — no extension needed.
+  useEffect(() => {
+    if (!video?.id || video.cache_status !== "ready" || cachePlaybackFailed) {
+      return;
+    }
+
+    const element = videoElementRef.current;
+    if (cacheSrcActiveRef.current && element && element.readyState >= 2) {
+      return;
+    }
+
+    const resolveToken = videoResolveTokenRef.current + 1;
+    videoResolveTokenRef.current = resolveToken;
+    const videoId = video.id;
+
+    setVideoResolving(true);
+    setVideoLoadFailed(false);
+
+    fetch(`/api/videos/${videoId}/cache`)
+      .then(async (res) => {
+        if (!res.ok) {
+          throw new Error(`Cache URL request failed (${res.status})`);
+        }
+        return (await res.json()) as { url?: string };
+      })
+      .then((data) => {
+        if (videoResolveTokenRef.current !== resolveToken) return;
+        if (!data.url) {
+          throw new Error("Cache URL missing in response");
+        }
+
+        cacheSrcActiveRef.current = true;
+        setVideoResolving(false);
+        setVideoSrc(data.url);
+        logVideoDebug("cache-playback-selected", { videoId });
+      })
+      .catch((err) => {
+        if (videoResolveTokenRef.current !== resolveToken) return;
+
+        logVideoDebug("cache-playback-error", {
+          videoId,
+          error: String(err instanceof Error ? err.message : err),
+        });
+        setCachePlaybackFailed(true);
+      });
+  }, [video?.id, video?.cache_status, cachePlaybackFailed]);
+
+  const seedVideoCache = useCallback(
+    async (target: Video) => {
+      const collectUrls = (urls: Array<string | null | undefined>) =>
+        urls.filter(
+          (url, index, arr): url is string =>
+            typeof url === "string" &&
+            /^https?:\/\//i.test(url) &&
+            arr.indexOf(url) === index,
+        );
+
+      try {
+        const uploadRes = await fetch(`/api/videos/${target.id}/cache`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "upload-url" }),
+        });
+        if (!uploadRes.ok) return;
+
+        const { upload } = (await uploadRes.json().catch(() => ({}))) as {
+          upload?: { signedUrl?: string };
+        };
+        if (!upload?.signedUrl) return;
+
+        let uploaded = false;
+        const candidates = collectUrls([
+          ...(Array.isArray(target.video_urls) ? target.video_urls : []),
+          target.video_url,
+        ]);
+
+        for (const candidate of candidates) {
+          const result = await requestVideoCacheUpload({
+            video_url: candidate,
+            upload_url: upload.signedUrl,
+          });
+          if (result.ok) {
+            uploaded = true;
+            break;
+          }
+        }
+
+        if (!uploaded) {
+          // Stored URLs are likely expired; scrape fresh ones and retry.
+          const tiktokVideoId =
+            target.tiktok_video_id ?? extractVideoIdFromUrl(target.tiktok_url);
+          if (tiktokVideoId) {
+            const refresh = await requestVideoRefresh({
+              tiktok_video_id: tiktokVideoId,
+              tiktok_url: target.tiktok_url,
+            });
+            const refreshedUrls = collectUrls([
+              ...(Array.isArray(refresh.video_urls) ? refresh.video_urls : []),
+              refresh.video_url,
+            ]);
+
+            if (refresh.ok && refreshedUrls.length > 0) {
+              void publishVideoSources(target.id, refreshedUrls);
+              for (const candidate of refreshedUrls) {
+                const result = await requestVideoCacheUpload({
+                  video_url: candidate,
+                  upload_url: upload.signedUrl,
+                });
+                if (result.ok) {
+                  uploaded = true;
+                  break;
+                }
+              }
+            }
+          }
+        }
+
+        await fetch(`/api/videos/${target.id}/cache`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: uploaded ? "complete" : "failed" }),
+        });
+      } catch (err) {
+        logVideoDebug("cache-seed-error", {
+          videoId: target.id,
+          error: String(err instanceof Error ? err.message : err),
+        });
+      }
+    },
+    [publishVideoSources],
+  );
+
+  // Host with the extension seeds the storage cache for the current video so
+  // every other player (including mobile) can stream it.
+  useEffect(() => {
+    if (!video?.id || !currentPlayer?.is_host || extensionAvailable !== true) {
+      return;
+    }
+    if (video.cache_status === "ready") return;
+    if (cacheSeedAttemptedRef.current.has(video.id)) return;
+
+    cacheSeedAttemptedRef.current.add(video.id);
+    void seedVideoCache(video);
+  }, [video, currentPlayer?.is_host, extensionAvailable, seedVideoCache]);
+
   useEffect(() => {
     if (
       playbackMode !== "host_desktop" ||
@@ -580,6 +732,10 @@ export function GamePlayView({
     }
 
     videoLoadTimeoutRef.current = setTimeout(() => {
+      // Cached storage playback just needs buffering time; a TikTok URL
+      // refresh cannot help it.
+      if (cacheSrcActiveRef.current) return;
+
       const el = videoElementRef.current;
       // readyState < 2 = HAVE_CURRENT_DATA not reached = video not playable yet
       if (el && el.readyState < 2 && !videoRefreshAttempted) {
@@ -812,9 +968,15 @@ export function GamePlayView({
   }, [videoCandidateIndex, videoCandidates.length]);
 
   useEffect(() => {
+    // Cached playback takes priority; candidates are the fallback path.
+    if (video?.cache_status === "ready" && !cachePlaybackFailed) {
+      return;
+    }
+
     const candidate = videoCandidates[videoCandidateIndex] || null;
     const resolveToken = videoResolveTokenRef.current + 1;
     videoResolveTokenRef.current = resolveToken;
+    cacheSrcActiveRef.current = false;
 
     if (resolvedVideoSrcRef.current) {
       URL.revokeObjectURL(resolvedVideoSrcRef.current);
@@ -886,6 +1048,8 @@ export function GamePlayView({
     };
   }, [
     video?.id,
+    video?.cache_status,
+    cachePlaybackFailed,
     videoCandidates,
     videoCandidateIndex,
     videoSourceKey,
@@ -1281,6 +1445,11 @@ export function GamePlayView({
                   });
 
                   setVideoSrc(null);
+                  if (cacheSrcActiveRef.current) {
+                    cacheSrcActiveRef.current = false;
+                    setCachePlaybackFailed(true);
+                    return;
+                  }
                   advanceToNextVideoCandidate();
                 }}
               />

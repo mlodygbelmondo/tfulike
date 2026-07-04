@@ -5,6 +5,7 @@ export type RoomStatus = "lobby" | "playing" | "finished";
 export type RoundStatus = "voting" | "reveal" | "done";
 export type SyncStatus = "idle" | "syncing" | "synced" | "error";
 export type PlaybackMode = "standard" | "host_desktop";
+export type VideoCacheStatus = "pending" | "uploading" | "ready" | "failed";
 
 // ============================================
 // Auth / Profile types
@@ -96,6 +97,9 @@ export interface Video {
   video_urls?: string[] | null;
   used: boolean;
   planned_round_number?: number | null;
+  storage_path?: string | null;
+  cache_status?: VideoCacheStatus;
+  cached_at?: string | null;
   created_at: string;
 }
 
