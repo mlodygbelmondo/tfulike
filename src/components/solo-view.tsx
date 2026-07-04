@@ -30,7 +30,7 @@ function getLikeCandidates(video: SoloVideo | null): string[] {
   return rawCandidates
     .filter(
       (url, index, arr) =>
-        typeof url === "string" && /^https?:\/\//i.test(url) && arr.indexOf(url) === index
+        typeof url === "string" && /^https?:\/\//i.test(url) && arr.indexOf(url) === index,
     )
     .filter((url): url is string => typeof url === "string");
 }
@@ -38,9 +38,7 @@ function getLikeCandidates(video: SoloVideo | null): string[] {
 function pickRandomUnseenIndex(videos: SoloVideo[], history: number[]): number {
   if (videos.length === 0) return -1;
 
-  const unseen = videos
-    .map((_, index) => index)
-    .filter((index) => !history.includes(index));
+  const unseen = videos.map((_, index) => index).filter((index) => !history.includes(index));
 
   const pool = unseen.length > 0 ? unseen : videos.map((_, index) => index);
   return pool[Math.floor(Math.random() * pool.length)] ?? -1;
@@ -48,6 +46,17 @@ function pickRandomUnseenIndex(videos: SoloVideo[], history: number[]): number {
 
 function shouldTreatMetadataAsBroken(videoWidth: number, videoHeight: number) {
   return videoWidth <= 0 || videoHeight <= 0;
+}
+
+function isTextEntryTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false;
+
+  return (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement ||
+    target.isContentEditable
+  );
 }
 
 export function SoloView({ dict }: { dict: Dictionary }) {
@@ -71,14 +80,14 @@ export function SoloView({ dict }: { dict: Dictionary }) {
   const [videoCandidateIndex, setVideoCandidateIndex] = useState(0);
   const filteredVideos = useMemo(
     () => videos.filter((video) => video.source === selectedSource),
-    [selectedSource, videos]
+    [selectedSource, videos],
   );
   const filteredVideoIdsKey = useMemo(
     () => filteredVideos.map((video) => video.id).join(","),
-    [filteredVideos]
+    [filteredVideos],
   );
   const currentLike =
-    history.length > 0 ? filteredVideos[history[historyIndex] ?? -1] ?? null : null;
+    history.length > 0 ? (filteredVideos[history[historyIndex] ?? -1] ?? null) : null;
   const videoCandidates = useMemo(() => getLikeCandidates(currentLike), [currentLike]);
   const videoCandidatesKey = useMemo(() => videoCandidates.join(","), [videoCandidates]);
   const videoContainerRef = useRef<HTMLDivElement | null>(null);
@@ -151,16 +160,14 @@ export function SoloView({ dict }: { dict: Dictionary }) {
     setVideoSrc(null);
     setSoundEnabled(true);
     setVideoFitMode("contain");
-  }, [videoCandidatesKey]);
+  }, [videoCandidates.length, videoCandidatesKey]);
 
   useEffect(() => {
     if (loading) return;
 
-    setHistory(
-      filteredVideos.length === 0 ? [] : [pickRandomUnseenIndex(filteredVideos, [])]
-    );
+    setHistory(filteredVideos.length === 0 ? [] : [pickRandomUnseenIndex(filteredVideos, [])]);
     setHistoryIndex(0);
-  }, [filteredVideoIdsKey, loading]);
+  }, [filteredVideoIdsKey, filteredVideos, loading]);
 
   useEffect(() => {
     return () => {
@@ -202,7 +209,7 @@ export function SoloView({ dict }: { dict: Dictionary }) {
         result.video_url,
       ].filter(
         (url, index, arr): url is string =>
-          typeof url === "string" && /^https?:\/\//i.test(url) && arr.indexOf(url) === index
+          typeof url === "string" && /^https?:\/\//i.test(url) && arr.indexOf(url) === index,
       );
 
       if (refreshed.length === 0) {
@@ -218,8 +225,8 @@ export function SoloView({ dict }: { dict: Dictionary }) {
 
       setVideos((currentVideos) =>
         currentVideos.map((video) =>
-          video.id === currentLike.id ? { ...replacement, source: currentLike.source } : video
-        )
+          video.id === currentLike.id ? { ...replacement, source: currentLike.source } : video,
+        ),
       );
     } finally {
       setVideoRefreshing(false);
@@ -356,6 +363,64 @@ export function SoloView({ dict }: { dict: Dictionary }) {
     }
   }, [soundEnabled]);
 
+  const handlePlayPauseToggle = useCallback(async () => {
+    const element = videoElementRef.current;
+    if (!element) return;
+
+    if (element.paused || element.ended) {
+      if (element.ended) {
+        element.currentTime = 0;
+      }
+
+      try {
+        await element.play();
+      } catch {
+        element.muted = true;
+        setSoundEnabled(false);
+        void element.play().catch(() => undefined);
+      }
+
+      return;
+    }
+
+    element.pause();
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.repeat || isTextEntryTarget(event.target)) return;
+
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        handlePrevious();
+        return;
+      }
+
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        handleNext();
+        return;
+      }
+
+      if (event.key.toLowerCase() === "m") {
+        event.preventDefault();
+        void handleSoundToggle();
+        return;
+      }
+
+      if (event.key === " ") {
+        event.preventDefault();
+        void handlePlayPauseToggle();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [handleNext, handlePlayPauseToggle, handlePrevious, handleSoundToggle]);
+
   if (loading) {
     return (
       <main className="relative left-1/2 flex h-dvh max-h-dvh w-screen -translate-x-1/2 items-center justify-center overflow-hidden p-6 text-sm text-muted">
@@ -380,9 +445,7 @@ export function SoloView({ dict }: { dict: Dictionary }) {
           />
         </div>
         <p className="max-w-md text-sm text-muted">
-          {selectedSource === "bookmark"
-            ? dict.game.soloEmptyBookmarks
-            : dict.game.soloEmptyLikes}
+          {selectedSource === "bookmark" ? dict.game.soloEmptyBookmarks : dict.game.soloEmptyLikes}
         </p>
         <button
           type="button"
@@ -443,7 +506,15 @@ export function SoloView({ dict }: { dict: Dictionary }) {
                 setVideoResolving(false);
               }}
               onEnded={() => {
-                if (!autoAdvanceEnabled) return;
+                if (!autoAdvanceEnabled) {
+                  const element = videoElementRef.current;
+                  if (!element) return;
+
+                  element.currentTime = 0;
+                  void element.play().catch(() => undefined);
+                  return;
+                }
+
                 handleNext();
               }}
               onLoadedMetadata={(event) => {
@@ -546,9 +617,7 @@ export function SoloView({ dict }: { dict: Dictionary }) {
                 aria-pressed={autoAdvanceEnabled}
                 className="min-h-11 rounded-full border border-white/20 px-4 text-sm font-semibold text-white transition hover:border-white/40"
               >
-                {autoAdvanceEnabled
-                  ? dict.game.soloModeHandsFree
-                  : dict.game.soloModeManual}
+                {autoAdvanceEnabled ? dict.game.soloModeHandsFree : dict.game.soloModeManual}
               </button>
               <button
                 type="button"
@@ -619,9 +688,7 @@ function SourceButton({
       onClick={onClick}
       aria-pressed={active}
       className={`min-h-11 rounded-full px-4 text-sm font-semibold transition ${
-        active
-          ? "bg-white text-black"
-          : "border border-white/20 text-white hover:border-white/40"
+        active ? "bg-white text-black" : "border border-white/20 text-white hover:border-white/40"
       }`}
     >
       {label}

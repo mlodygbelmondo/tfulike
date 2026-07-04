@@ -11,7 +11,14 @@ import {
   checkExtensionPresent,
   requestVideoDataUri,
 } from "@/lib/extension";
-import type { Player, Round, RoundSkip, Video, RoomSettings } from "@/lib/types";
+import type {
+  PlaybackMode,
+  Player,
+  Round,
+  RoundSkip,
+  Video,
+  RoomSettings,
+} from "@/lib/types";
 import type { Dictionary } from "@/lib/dictionaries";
 
 const VIDEO_DEBUG_STORAGE_KEY = "tfulike_debug_video";
@@ -73,6 +80,14 @@ function extractVideoIdFromUrl(url: string | null | undefined): string | null {
   return match?.[1] ?? null;
 }
 
+function getPlaybackMode(
+  settings: RoomSettings & { playback_mode?: unknown },
+): PlaybackMode {
+  return settings.playback_mode === "host_desktop"
+    ? "host_desktop"
+    : "standard";
+}
+
 type GamePhase = "loading" | "voting" | "reveal" | "finished";
 
 type VideoFitMode = "cover" | "contain";
@@ -129,6 +144,10 @@ export function GamePlayView({
   const [videoRefreshing, setVideoRefreshing] = useState(false);
   const [videoRefreshAttempted, setVideoRefreshAttempted] = useState(false);
   const [videoResolving, setVideoResolving] = useState(false);
+  const [extensionAvailable, setExtensionAvailable] = useState<boolean | null>(
+    null,
+  );
+  const [playbackMode, setPlaybackMode] = useState<PlaybackMode>("standard");
   const [revealSubmitting, setRevealSubmitting] = useState(false);
   const [nextRoundSubmitting, setNextRoundSubmitting] = useState(false);
   const [skipSubmitting, setSkipSubmitting] = useState(false);
@@ -136,7 +155,9 @@ export function GamePlayView({
   const revealTriggeredRef = useRef(false);
   const videoElementRef = useRef<HTMLVideoElement | null>(null);
   const videoContainerRef = useRef<HTMLDivElement | null>(null);
-  const videoLoadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const videoLoadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const extensionPresentRef = useRef<boolean | null>(null);
   const videoRefreshAttemptedRef = useRef(false);
   const attemptExtensionRefreshRef = useRef<(() => Promise<void>) | null>(null);
@@ -144,6 +165,7 @@ export function GamePlayView({
   const videoResolveTokenRef = useRef(0);
   const currentVideoIdRef = useRef<string | null>(null);
   const fetchRoundTokenRef = useRef(0);
+  const hostRefreshAttemptedRef = useRef<Set<string>>(new Set());
 
   const videoSourceKey = [
     video?.id ?? "",
@@ -158,7 +180,7 @@ export function GamePlayView({
         if (createdAtCompare !== 0) return createdAtCompare;
         return a.id.localeCompare(b.id);
       }),
-    [players]
+    [players],
   );
   const votedPlayerIds = useMemo(() => {
     if (!revealData?.votes) return new Set<string>();
@@ -172,7 +194,9 @@ export function GamePlayView({
     if (skipPlayerIds.length === 0) return [];
     return stablePlayers.filter((player) => !skipPlayerIds.includes(player.id));
   }, [skipPlayerIds, stablePlayers]);
-  const currentPlayerSkipped = currentPlayerId ? skipPlayerIds.includes(currentPlayerId) : false;
+  const currentPlayerSkipped = currentPlayerId
+    ? skipPlayerIds.includes(currentPlayerId)
+    : false;
 
   useEffect(() => {
     currentVideoIdRef.current = video?.id ?? null;
@@ -222,6 +246,7 @@ export function GamePlayView({
 
     const settings = room.settings as RoomSettings & { total_rounds?: number };
     setTotalRounds(settings.total_rounds || 30);
+    setPlaybackMode(getPlaybackMode(settings));
 
     // Get players
     const { data: playersData } = await supabase
@@ -299,8 +324,8 @@ export function GamePlayView({
     if (fetchRoundTokenRef.current !== fetchToken) return;
 
     const existingVoteGuess = Array.isArray(existingVote)
-      ? existingVote[0]?.guessed_player_id ?? null
-      : existingVote?.guessed_player_id ?? null;
+      ? (existingVote[0]?.guessed_player_id ?? null)
+      : (existingVote?.guessed_player_id ?? null);
 
     if (existingVoteGuess) {
       setVotedFor(existingVoteGuess);
@@ -316,14 +341,17 @@ export function GamePlayView({
     if (fetchRoundTokenRef.current !== fetchToken) return;
 
     setRevealData((current) => ({
-      correct_player_id: current?.correct_player_id ?? roundData.correct_player_id ?? "",
+      correct_player_id:
+        current?.correct_player_id ?? roundData.correct_player_id ?? "",
       votes: (votesData as RevealData["votes"]) ?? [],
       score_deltas: current?.score_deltas ?? {},
       players: current?.players ?? [],
     }));
 
     if (!existingVoteGuess && Array.isArray(votesData) && myPlayerId) {
-      const myVoteFromList = votesData.find((vote) => vote.player_id === myPlayerId);
+      const myVoteFromList = votesData.find(
+        (vote) => vote.player_id === myPlayerId,
+      );
       setVotedFor(myVoteFromList?.guessed_player_id ?? null);
     }
 
@@ -342,7 +370,11 @@ export function GamePlayView({
 
     const playerCount = playersData?.length || 0;
     setAllVoted(!!voteCount && voteCount >= playerCount);
-    setSkipPlayerIds(((roundSkips as Pick<RoundSkip, "player_id">[] | null) ?? []).map((skip) => skip.player_id));
+    setSkipPlayerIds(
+      ((roundSkips as Pick<RoundSkip, "player_id">[] | null) ?? []).map(
+        (skip) => skip.player_id,
+      ),
+    );
 
     if (localRevealActive && roundData.status === "voting") {
       setPhase("reveal");
@@ -366,7 +398,7 @@ export function GamePlayView({
         (url, index, arr) =>
           typeof url === "string" &&
           /^https?:\/\//i.test(url) &&
-          arr.indexOf(url) === index
+          arr.indexOf(url) === index,
       )
       .filter((url): url is string => typeof url === "string");
 
@@ -422,19 +454,125 @@ export function GamePlayView({
       candidateCount: videoCandidates.length,
       selected: summarizeVideoUrlForDebug(videoSrc),
     });
-  }, [video?.id, videoSrc, videoCandidateIndex, videoCandidates.length, videoLoadFailed]);
+  }, [
+    video?.id,
+    videoSrc,
+    videoCandidateIndex,
+    videoCandidates.length,
+    videoLoadFailed,
+  ]);
 
   // Check extension presence once on mount
   useEffect(() => {
     checkExtensionPresent().then((version) => {
       extensionPresentRef.current = version !== null;
+      setExtensionAvailable(version !== null);
       logVideoDebug("extension-check", { present: version !== null, version });
     });
   }, []);
 
+  const publishVideoSources = useCallback(
+    async (videoId: string, urls: string[]) => {
+      const dedupedUrls = urls.filter(
+        (url, index, arr) =>
+          typeof url === "string" &&
+          /^https?:\/\//i.test(url) &&
+          arr.indexOf(url) === index,
+      );
+
+      if (dedupedUrls.length === 0) return null;
+
+      const response = await fetch(`/api/videos/${videoId}/sources`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          video_url: dedupedUrls[0],
+          video_urls: dedupedUrls,
+        }),
+      });
+
+      if (!response.ok) return null;
+
+      const data = (await response.json().catch(() => ({}))) as {
+        video?: Video;
+      };
+      return data.video ?? null;
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (
+      playbackMode !== "host_desktop" ||
+      !currentPlayer?.is_host ||
+      extensionAvailable !== true ||
+      !video?.id
+    ) {
+      return;
+    }
+
+    if (hostRefreshAttemptedRef.current.has(video.id)) {
+      return;
+    }
+
+    const tiktokVideoId =
+      video.tiktok_video_id ?? extractVideoIdFromUrl(video.tiktok_url);
+    if (!tiktokVideoId) {
+      return;
+    }
+
+    hostRefreshAttemptedRef.current.add(video.id);
+    const refreshForVideoId = video.id;
+
+    requestVideoRefresh({
+      tiktok_video_id: tiktokVideoId,
+      tiktok_url: video.tiktok_url,
+    })
+      .then(async (result) => {
+        if (currentVideoIdRef.current !== refreshForVideoId) {
+          return;
+        }
+
+        const refreshedUrls = [
+          ...(Array.isArray(result.video_urls) ? result.video_urls : []),
+          result.video_url,
+        ].filter(
+          (url, index, arr): url is string =>
+            typeof url === "string" &&
+            /^https?:\/\//i.test(url) &&
+            arr.indexOf(url) === index,
+        );
+
+        if (!result.ok || refreshedUrls.length === 0) {
+          return;
+        }
+
+        const updatedVideo = await publishVideoSources(
+          refreshForVideoId,
+          refreshedUrls,
+        );
+        if (updatedVideo && currentVideoIdRef.current === refreshForVideoId) {
+          setVideo(updatedVideo);
+        }
+      })
+      .catch((err) => {
+        logVideoDebug("host-video-refresh-error", {
+          videoId: refreshForVideoId,
+          error: String(err instanceof Error ? err.message : err),
+        });
+      });
+  }, [
+    currentPlayer?.is_host,
+    extensionAvailable,
+    playbackMode,
+    publishVideoSources,
+    video,
+  ]);
+
   // 3-second timeout: if video hasn't started playing, try extension refresh
   useEffect(() => {
     if (!videoSrc || videoRefreshAttempted || videoRefreshing) return;
+    if (playbackMode === "host_desktop" && extensionAvailable === false) return;
 
     if (videoLoadTimeoutRef.current) {
       clearTimeout(videoLoadTimeoutRef.current);
@@ -462,7 +600,13 @@ export function GamePlayView({
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [videoSrc, videoRefreshAttempted, videoRefreshing]);
+  }, [
+    extensionAvailable,
+    playbackMode,
+    videoSrc,
+    videoRefreshAttempted,
+    videoRefreshing,
+  ]);
 
   // Cancel timeout when video successfully plays
   const handlePlaying = useCallback(
@@ -484,7 +628,7 @@ export function GamePlayView({
         readyState: element.readyState,
       });
     },
-    [video?.id, videoCandidateIndex, videoSrc]
+    [video?.id, videoCandidateIndex, videoSrc],
   );
 
   const handleCanPlay = useCallback(
@@ -523,7 +667,9 @@ export function GamePlayView({
             logVideoDebug("video-play-muted-fallback-failed", {
               videoId: video?.id ?? null,
               error: String(
-                fallbackError instanceof Error ? fallbackError.message : fallbackError
+                fallbackError instanceof Error
+                  ? fallbackError.message
+                  : fallbackError,
               ),
             });
           }
@@ -537,7 +683,7 @@ export function GamePlayView({
         readyState: element.readyState,
       });
     },
-    [soundEnabled, video?.id, videoCandidateIndex, videoSrc]
+    [soundEnabled, video?.id, videoCandidateIndex, videoSrc],
   );
 
   const handleSoundToggle = useCallback(async () => {
@@ -573,13 +719,15 @@ export function GamePlayView({
     videoRefreshAttemptedRef.current = true;
 
     if (!extensionPresentRef.current) {
-      logVideoDebug("extension-refresh-skip", { reason: "extension not present" });
+      logVideoDebug("extension-refresh-skip", {
+        reason: "extension not present",
+      });
       setVideoLoadFailed(true);
       return;
     }
 
-    // Extract tiktok_video_id from tiktok_url if we don't have it directly
-    const tiktokVideoId = extractVideoIdFromUrl(video.tiktok_url);
+    const tiktokVideoId =
+      video.tiktok_video_id ?? extractVideoIdFromUrl(video.tiktok_url);
     if (!tiktokVideoId) {
       logVideoDebug("extension-refresh-skip", { reason: "no video id" });
       setVideoLoadFailed(true);
@@ -610,7 +758,7 @@ export function GamePlayView({
           (url, index, arr) =>
             typeof url === "string" &&
             /^https?:\/\//i.test(url) &&
-            arr.indexOf(url) === index
+            arr.indexOf(url) === index,
         );
 
         if (!result.ok || refreshedUrls.length === 0) {
@@ -682,6 +830,16 @@ export function GamePlayView({
     setVideoLoadFailed(false);
     setVideoResolving(true);
 
+    if (playbackMode === "host_desktop" && extensionAvailable === null) {
+      return;
+    }
+
+    if (playbackMode === "host_desktop" && extensionAvailable === false) {
+      setVideoResolving(false);
+      setVideoSrc(candidate);
+      return;
+    }
+
     requestVideoDataUri(candidate)
       .then((blobUrl) => {
         if (videoResolveTokenRef.current !== resolveToken) {
@@ -730,6 +888,8 @@ export function GamePlayView({
     videoCandidates,
     videoCandidateIndex,
     videoSourceKey,
+    extensionAvailable,
+    playbackMode,
   ]);
 
   // Initial load
@@ -783,8 +943,13 @@ export function GamePlayView({
       .channel(`game:${pin}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "rooms", filter: `pin=eq.${pin}` },
-        () => fetchRound()
+        {
+          event: "*",
+          schema: "public",
+          table: "rooms",
+          filter: `pin=eq.${pin}`,
+        },
+        () => fetchRound(),
       )
       .on(
         "postgres_changes",
@@ -794,7 +959,17 @@ export function GamePlayView({
           table: "rounds",
           filter: `room_id=eq.${roomId}`,
         },
-        () => fetchRound()
+        () => fetchRound(),
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "videos",
+          filter: `room_id=eq.${roomId}`,
+        },
+        () => fetchRound(),
       )
       .on(
         "postgres_changes",
@@ -804,7 +979,7 @@ export function GamePlayView({
           table: "players",
           filter: `room_id=eq.${roomId}`,
         },
-        () => fetchRound()
+        () => fetchRound(),
       )
       .on(
         "postgres_changes",
@@ -814,7 +989,7 @@ export function GamePlayView({
           table: "round_skips",
           filter: `round_id=eq.${round?.id}`,
         },
-        () => fetchRound()
+        () => fetchRound(),
       );
 
     if (round?.id) {
@@ -826,7 +1001,7 @@ export function GamePlayView({
           table: "votes",
           filter: `round_id=eq.${round.id}`,
         },
-        () => fetchRound()
+        () => fetchRound(),
       );
     }
 
@@ -948,7 +1123,9 @@ export function GamePlayView({
       }
 
       fetchRoundTokenRef.current += 1;
-      setSkipPlayerIds(Array.isArray(data.skipped_player_ids) ? data.skipped_player_ids : []);
+      setSkipPlayerIds(
+        Array.isArray(data.skipped_player_ids) ? data.skipped_player_ids : [],
+      );
 
       if (data.all_skipped) {
         setVotedFor(null);
@@ -998,10 +1175,7 @@ export function GamePlayView({
         {/* Skeleton: player buttons */}
         <div className="grid grid-cols-2 gap-2 w-full max-w-sm">
           {[1, 2, 3, 4].map((i) => (
-            <div
-              key={i}
-              className="h-14 bg-surface rounded-xl animate-pulse"
-            />
+            <div key={i} className="h-14 bg-surface rounded-xl animate-pulse" />
           ))}
         </div>
       </div>
@@ -1015,8 +1189,7 @@ export function GamePlayView({
       {/* Round counter */}
       <div className="absolute inset-x-0 top-0 z-30 flex items-center justify-between px-4 pt-4">
         <span className="text-sm text-muted">
-          {dict.game.round} {round?.round_number} {dict.game.of}{" "}
-          {totalRounds}
+          {dict.game.round} {round?.round_number} {dict.game.of} {totalRounds}
         </span>
         {phase === "voting" && allVoted && (
           <span className="text-sm text-green-400 font-medium animate-fade-in">
@@ -1064,7 +1237,9 @@ export function GamePlayView({
                     videoId: video?.id ?? null,
                     candidateIndex: videoCandidateIndex,
                     selected: summarizeVideoUrlForDebug(videoSrc),
-                    currentSrc: summarizeVideoUrlForDebug(element.currentSrc || videoSrc),
+                    currentSrc: summarizeVideoUrlForDebug(
+                      element.currentSrc || videoSrc,
+                    ),
                     networkState: element.networkState,
                     readyState: element.readyState,
                   });
@@ -1072,20 +1247,27 @@ export function GamePlayView({
                 onLoadedMetadata={(event) => {
                   const element = event.currentTarget;
                   const container = videoContainerRef.current;
-                 if (shouldTreatMetadataAsBroken(element.videoWidth, element.videoHeight)) {
-                   setVideoSrc(null);
-                   setVideoLoadFailed(false);
-                   setVideoResolving(true);
-                   advanceToNextVideoCandidate();
-                   return;
-                 }
+                  if (
+                    shouldTreatMetadataAsBroken(
+                      element.videoWidth,
+                      element.videoHeight,
+                    )
+                  ) {
+                    setVideoSrc(null);
+                    setVideoLoadFailed(false);
+                    setVideoResolving(true);
+                    advanceToNextVideoCandidate();
+                    return;
+                  }
 
-                 const videoAspect =
-                   element.videoWidth > 0 && element.videoHeight > 0
-                     ? element.videoWidth / element.videoHeight
-                     : null;
+                  const videoAspect =
+                    element.videoWidth > 0 && element.videoHeight > 0
+                      ? element.videoWidth / element.videoHeight
+                      : null;
                   const containerAspect =
-                    container && container.clientWidth > 0 && container.clientHeight > 0
+                    container &&
+                    container.clientWidth > 0 &&
+                    container.clientHeight > 0
                       ? container.clientWidth / container.clientHeight
                       : null;
 
@@ -1096,9 +1278,12 @@ export function GamePlayView({
                     Number.isFinite(videoAspect) &&
                     Number.isFinite(containerAspect)
                   ) {
-                    const delta = Math.abs(videoAspect - containerAspect) / containerAspect;
+                    const delta =
+                      Math.abs(videoAspect - containerAspect) / containerAspect;
                     nextFitMode =
-                      delta <= VIDEO_COVER_ASPECT_TOLERANCE ? "cover" : "contain";
+                      delta <= VIDEO_COVER_ASPECT_TOLERANCE
+                        ? "cover"
+                        : "contain";
                   }
 
                   setVideoFitMode(nextFitMode);
@@ -1106,8 +1291,12 @@ export function GamePlayView({
                   logVideoDebug("video-loaded-metadata", {
                     videoId: video?.id ?? null,
                     candidateIndex: videoCandidateIndex,
-                    currentSrc: summarizeVideoUrlForDebug(element.currentSrc || videoSrc),
-                    duration: Number.isFinite(element.duration) ? element.duration : null,
+                    currentSrc: summarizeVideoUrlForDebug(
+                      element.currentSrc || videoSrc,
+                    ),
+                    duration: Number.isFinite(element.duration)
+                      ? element.duration
+                      : null,
                     videoWidth: element.videoWidth,
                     videoHeight: element.videoHeight,
                     videoAspect,
@@ -1127,7 +1316,9 @@ export function GamePlayView({
                     videoId: video?.id ?? null,
                     candidateIndex: videoCandidateIndex,
                     candidateCount: videoCandidates.length,
-                    currentSrc: summarizeVideoUrlForDebug(element.currentSrc || videoSrc),
+                    currentSrc: summarizeVideoUrlForDebug(
+                      element.currentSrc || videoSrc,
+                    ),
                     networkState: element.networkState,
                     readyState: element.readyState,
                     mediaErrorCode: element.error?.code ?? null,
@@ -1136,10 +1327,10 @@ export function GamePlayView({
                     willAttemptRefresh: !videoRefreshAttempted,
                   });
 
-                   setVideoSrc(null);
-                   advanceToNextVideoCandidate();
-                 }}
-               />
+                  setVideoSrc(null);
+                  advanceToNextVideoCandidate();
+                }}
+              />
             </div>
           </>
         ) : (
@@ -1180,17 +1371,24 @@ export function GamePlayView({
             data-testid="voting-dock"
             className="mx-auto flex w-full max-w-5xl flex-col gap-3 rounded-3xl bg-black/60 p-3 backdrop-blur-md"
           >
-            <h2 className="text-center text-lg font-bold">{dict.game.whoseTiktok}</h2>
+            <h2 className="text-center text-lg font-bold">
+              {dict.game.whoseTiktok}
+            </h2>
 
             {votedFor ? (
               <div className="text-center py-3 animate-scale-in">
-                <p className="text-accent font-bold text-xl">{dict.game.voted}</p>
+                <p className="text-accent font-bold text-xl">
+                  {dict.game.voted}
+                </p>
                 {!allVoted && (
                   <>
-                    <p className="text-muted text-sm mt-1">{dict.game.waiting}</p>
+                    <p className="text-muted text-sm mt-1">
+                      {dict.game.waiting}
+                    </p>
                     {waitingPlayers.length > 0 && (
                       <p className="text-muted text-xs mt-1">
-                        {dict.game.waitingForVotesFrom} {waitingPlayers.map((p) => p.nickname).join(", ")}
+                        {dict.game.waitingForVotesFrom}{" "}
+                        {waitingPlayers.map((p) => p.nickname).join(", ")}
                       </p>
                     )}
                   </>
@@ -1230,7 +1428,9 @@ export function GamePlayView({
                 disabled={skipSubmitting}
                 className="min-h-11 rounded-full border border-white/20 px-4 text-sm font-semibold text-white transition hover:border-white/40 disabled:opacity-40"
               >
-                {currentPlayerSkipped ? dict.game.undoSkip : dict.game.skipVideo}
+                {currentPlayerSkipped
+                  ? dict.game.undoSkip
+                  : dict.game.skipVideo}
               </button>
               {isHost && (
                 <button
@@ -1244,10 +1444,17 @@ export function GamePlayView({
             </div>
             {skipPlayerIds.length > 0 && (
               <div className="text-center text-xs text-muted">
-                <p>{dict.game.skipVotes.replace("{count}", String(skipPlayerIds.length)).replace("{total}", String(stablePlayers.length))}</p>
+                <p>
+                  {dict.game.skipVotes
+                    .replace("{count}", String(skipPlayerIds.length))
+                    .replace("{total}", String(stablePlayers.length))}
+                </p>
                 {waitingSkipPlayers.length > 0 && (
                   <p>
-                    {dict.game.waitingForSkips} {waitingSkipPlayers.map((player) => player.nickname).join(", ")}
+                    {dict.game.waitingForSkips}{" "}
+                    {waitingSkipPlayers
+                      .map((player) => player.nickname)
+                      .join(", ")}
                   </p>
                 )}
               </div>
@@ -1273,16 +1480,22 @@ export function GamePlayView({
                       correctPlayerId={round.correct_player_id}
                     />
                   ) : (
-                    <div className={slotDone ? "animate-scale-in" : "animate-bounce-in"}>
+                    <div
+                      className={
+                        slotDone ? "animate-scale-in" : "animate-bounce-in"
+                      }
+                    >
                       <div className="animate-glow-pulse rounded-full">
                         <PlayerAvatar
                           nickname={
-                            players.find((p) => p.id === round.correct_player_id)
-                              ?.nickname || "?"
+                            players.find(
+                              (p) => p.id === round.correct_player_id,
+                            )?.nickname || "?"
                           }
                           color={
-                            players.find((p) => p.id === round.correct_player_id)
-                              ?.color || "#888"
+                            players.find(
+                              (p) => p.id === round.correct_player_id,
+                            )?.color || "#888"
                           }
                           size="lg"
                         />
@@ -1304,7 +1517,9 @@ export function GamePlayView({
                   <div className="flex flex-col gap-2">
                     {revealData.votes.map((v, i) => {
                       const voter = players.find((p) => p.id === v.player_id);
-                      const guessed = players.find((p) => p.id === v.guessed_player_id);
+                      const guessed = players.find(
+                        (p) => p.id === v.guessed_player_id,
+                      );
                       return (
                         <div
                           key={i}
@@ -1374,7 +1589,9 @@ export function GamePlayView({
       )}
 
       {error && (
-        <p className="text-red-400 text-sm text-center animate-fade-in">{error}</p>
+        <p className="text-red-400 text-sm text-center animate-fade-in">
+          {error}
+        </p>
       )}
     </main>
   );
@@ -1438,7 +1655,8 @@ function SlotMachineReveal({
     return () => clearTimeout(timer);
   }, []);
 
-  const current = sequence.current[Math.min(visibleIndex, sequence.current.length - 1)];
+  const current =
+    sequence.current[Math.min(visibleIndex, sequence.current.length - 1)];
   if (!current) return null;
 
   return (

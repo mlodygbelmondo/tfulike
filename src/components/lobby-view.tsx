@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { PlayerAvatar } from "@/components/player-avatar";
 import { getStoredSession } from "@/lib/game";
-import type { Player, Room, SyncStatus } from "@/lib/types";
-import { ROUND_COUNT_OPTIONS } from "@/lib/types";
+import type { PlaybackMode, Player, Room, SyncStatus } from "@/lib/types";
+import { PLAYBACK_MODE_OPTIONS, ROUND_COUNT_OPTIONS } from "@/lib/types";
 import type { Dictionary } from "@/lib/dictionaries";
 import Link from "next/link";
 import { checkExtensionPresent, requestExtensionSync } from "@/lib/extension";
@@ -30,6 +30,7 @@ export function LobbyView({
 
   // Round count selector
   const [selectedRounds, setSelectedRounds] = useState<number | null>(null);
+  const [playbackMode, setPlaybackMode] = useState<PlaybackMode>("standard");
 
   // Extension detection
   const [extensionVersion, setExtensionVersion] = useState<string | null>(null);
@@ -86,6 +87,14 @@ export function LobbyView({
     if (settings?.max_rounds && typeof settings.max_rounds === "number") {
       setSelectedRounds(settings.max_rounds);
     }
+    if (
+      typeof settings?.playback_mode === "string" &&
+      PLAYBACK_MODE_OPTIONS.includes(settings.playback_mode as PlaybackMode)
+    ) {
+      setPlaybackMode(settings.playback_mode as PlaybackMode);
+    } else {
+      setPlaybackMode("standard");
+    }
 
     // Fetch players
     const { data: playersData } = await supabase
@@ -123,17 +132,29 @@ export function LobbyView({
     // Subscribe to realtime changes
     const supabase = createClient();
 
-    let channel = supabase.channel(`room:${pin}`).on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: "rooms", filter: `pin=eq.${pin}` },
-      () => fetchData()
-    );
+    let channel = supabase
+      .channel(`room:${pin}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "rooms",
+          filter: `pin=eq.${pin}`,
+        },
+        () => fetchData(),
+      );
 
     if (roomId) {
       channel = channel.on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "players", filter: `room_id=eq.${roomId}` },
-        () => fetchData()
+        {
+          event: "*",
+          schema: "public",
+          table: "players",
+          filter: `room_id=eq.${roomId}`,
+        },
+        () => fetchData(),
       );
     }
 
@@ -157,8 +178,36 @@ export function LobbyView({
     if (!res.ok) {
       setError("Failed to update round count");
       setSelectedRounds(
-        typeof room.settings?.max_rounds === "number" ? room.settings.max_rounds : null
+        typeof room.settings?.max_rounds === "number"
+          ? room.settings.max_rounds
+          : null,
       );
+      return;
+    }
+
+    const data = await res.json();
+    if (data?.room) {
+      setRoom(data.room as Room);
+    }
+  }
+
+  async function handlePlaybackModeChange(mode: PlaybackMode) {
+    setPlaybackMode(mode);
+    if (!room) return;
+
+    const res = await fetch(`/api/rooms/${pin}/settings`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ playback_mode: mode }),
+    });
+
+    if (!res.ok) {
+      setError("Failed to update playback mode");
+      const previousMode =
+        room.settings?.playback_mode === "host_desktop"
+          ? "host_desktop"
+          : "standard";
+      setPlaybackMode(previousMode);
       return;
     }
 
@@ -221,9 +270,12 @@ export function LobbyView({
 
         if (!syncResponse.ok) {
           const data = await syncResponse.json().catch(() => ({}));
-          const detail = typeof data.detail === "string" && data.detail ? `: ${data.detail}` : "";
+          const detail =
+            typeof data.detail === "string" && data.detail
+              ? `: ${data.detail}`
+              : "";
           throw new Error(
-            `${typeof data.error === "string" && data.error ? data.error : dict.lobby.syncError}${detail}`
+            `${typeof data.error === "string" && data.error ? data.error : dict.lobby.syncError}${detail}`,
           );
         }
 
@@ -279,8 +331,10 @@ export function LobbyView({
   }
 
   const isHost = currentPlayer?.is_host;
-  const allSynced = players.length >= 2 && players.every((p) => p.sync_status === "synced");
-  const canStart = allSynced;
+  const allSynced =
+    players.length >= 2 && players.every((p) => p.sync_status === "synced");
+  const canStart =
+    allSynced && (playbackMode === "standard" || Boolean(extensionVersion));
   const mySyncStatus: SyncStatus = currentPlayer?.sync_status || "idle";
 
   return (
@@ -324,7 +378,9 @@ export function LobbyView({
                   </span>
                   <div className="flex items-center gap-1">
                     {p.tiktok_username && (
-                      <span className="text-xs text-muted">@{p.tiktok_username}</span>
+                      <span className="text-xs text-muted">
+                        @{p.tiktok_username}
+                      </span>
                     )}
                     <SyncBadge status={p.sync_status} dict={dict} />
                   </div>
@@ -360,7 +416,9 @@ export function LobbyView({
                       ? dict.lobby.syncRetry
                       : dict.lobby.syncLikes}
               </button>
-              <p className="text-xs text-muted text-center">{dict.lobby.desktopSyncHint}</p>
+              <p className="text-xs text-muted text-center">
+                {dict.lobby.desktopSyncHint}
+              </p>
             </div>
           ) : (
             <div className="text-center py-2 px-3 rounded-xl bg-yellow-900/20 border border-yellow-800 text-yellow-400 text-sm">
@@ -394,6 +452,35 @@ export function LobbyView({
         </div>
       )}
 
+      {isHost && (
+        <div className="w-full max-w-sm">
+          <h2 className="text-sm font-medium text-muted mb-2">
+            {dict.lobby.playbackMode}
+          </h2>
+          <div className="grid gap-2">
+            <PlaybackModeButton
+              active={playbackMode === "standard"}
+              title={dict.lobby.playbackModeStandard}
+              description={dict.lobby.playbackModeStandardHint}
+              onClick={() => handlePlaybackModeChange("standard")}
+            />
+            <PlaybackModeButton
+              active={playbackMode === "host_desktop"}
+              title={dict.lobby.playbackModeHostDesktop}
+              description={dict.lobby.playbackModeHostDesktopHint}
+              onClick={() => handlePlaybackModeChange("host_desktop")}
+            />
+          </div>
+          {playbackMode === "host_desktop" &&
+            extensionChecked &&
+            !extensionVersion && (
+              <p className="mt-2 text-center text-xs text-yellow-400">
+                {dict.lobby.hostExtensionRequired}
+              </p>
+            )}
+        </div>
+      )}
+
       {/* Actions */}
       <div className="flex flex-col gap-3 w-full max-w-sm mt-auto">
         {players.length < 2 && (
@@ -412,11 +499,37 @@ export function LobbyView({
           </button>
         )}
 
-        {error && (
-          <p className="text-red-400 text-sm text-center">{error}</p>
-        )}
+        {error && <p className="text-red-400 text-sm text-center">{error}</p>}
       </div>
     </main>
+  );
+}
+
+function PlaybackModeButton({
+  active,
+  title,
+  description,
+  onClick,
+}: {
+  active: boolean;
+  title: string;
+  description: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`min-h-16 rounded-xl border px-4 py-3 text-left transition-all active:scale-95 ${
+        active
+          ? "border-accent bg-accent/15 text-foreground"
+          : "border-surface-2 bg-surface text-muted hover:border-accent"
+      }`}
+    >
+      <span className="block text-sm font-semibold">{title}</span>
+      <span className="mt-1 block text-xs leading-5">{description}</span>
+    </button>
   );
 }
 
