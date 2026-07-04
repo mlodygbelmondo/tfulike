@@ -86,6 +86,7 @@ export const mockDict: Dictionary = {
       "Experimental mode needs the host on desktop Chrome with the extension.",
   },
   game: {
+    reconnecting: "Reconnecting...",
     round: "Round",
     of: "of",
     whoseTiktok: "Whose TikTok is this?",

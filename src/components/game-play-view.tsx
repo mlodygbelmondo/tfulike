@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { useRealtimeChannel } from "@/lib/use-realtime-channel";
 import { PlayerAvatar } from "@/components/player-avatar";
 import { getStoredSession } from "@/lib/game";
 import type { User } from "@supabase/supabase-js";
@@ -933,84 +934,29 @@ export function GamePlayView({
       .catch(() => fetchRound());
   }, [phase, allVoted, pin, currentPlayerId, fetchRound]);
 
-  // Realtime subscription
-  useEffect(() => {
-    if (!roomId) return;
+  // Realtime subscriptions: a stable room-level channel that survives round
+  // changes, plus a per-round channel for round-scoped tables.
+  const { disconnected: realtimeDisconnected } = useRealtimeChannel({
+    channelName: `game:${pin}`,
+    enabled: Boolean(roomId),
+    changes: [
+      { event: "*", table: "rooms", filter: `pin=eq.${pin}` },
+      { event: "*", table: "rounds", filter: `room_id=eq.${roomId}` },
+      { event: "*", table: "videos", filter: `room_id=eq.${roomId}` },
+      { event: "*", table: "players", filter: `room_id=eq.${roomId}` },
+    ],
+    onChange: fetchRound,
+  });
 
-    const supabase = createClient();
-
-    let channel = supabase
-      .channel(`game:${pin}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "rooms",
-          filter: `pin=eq.${pin}`,
-        },
-        () => fetchRound(),
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "rounds",
-          filter: `room_id=eq.${roomId}`,
-        },
-        () => fetchRound(),
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "videos",
-          filter: `room_id=eq.${roomId}`,
-        },
-        () => fetchRound(),
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "players",
-          filter: `room_id=eq.${roomId}`,
-        },
-        () => fetchRound(),
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "round_skips",
-          filter: `round_id=eq.${round?.id}`,
-        },
-        () => fetchRound(),
-      );
-
-    if (round?.id) {
-      channel = channel.on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "votes",
-          filter: `round_id=eq.${round.id}`,
-        },
-        () => fetchRound(),
-      );
-    }
-
-    channel.subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [pin, roomId, round?.id, fetchRound]);
+  useRealtimeChannel({
+    channelName: `game:${pin}:round:${round?.id}`,
+    enabled: Boolean(round?.id),
+    changes: [
+      { event: "*", table: "round_skips", filter: `round_id=eq.${round?.id}` },
+      { event: "INSERT", table: "votes", filter: `round_id=eq.${round?.id}` },
+    ],
+    onChange: fetchRound,
+  });
 
   async function handleVote(guessedPlayerId: string) {
     if (votedFor || !round || !currentPlayer) return;
@@ -1186,6 +1132,13 @@ export function GamePlayView({
 
   return (
     <main className="relative left-1/2 flex h-dvh max-h-dvh w-screen -translate-x-1/2 flex-col overflow-hidden bg-black text-white">
+      {realtimeDisconnected && (
+        <div className="absolute inset-x-0 top-12 z-40 flex justify-center">
+          <span className="rounded-full bg-yellow-500/20 px-3 py-1 text-xs font-medium text-yellow-300 animate-pulse">
+            {dict.game.reconnecting}
+          </span>
+        </div>
+      )}
       {/* Round counter */}
       <div className="absolute inset-x-0 top-0 z-30 flex items-center justify-between px-4 pt-4">
         <span className="text-sm text-muted">

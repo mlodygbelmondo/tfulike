@@ -79,6 +79,7 @@
     "hostExtensionRequired": "Tryb eksperymentalny wymaga hosta w Chrome na komputerze z rozszerzeniem."
   },
   "game": {
+    "reconnecting": "Ponowne łączenie...",
     "round": "Runda",
     "of": "z",
     "whoseTiktok": "Czyj to TikTok?",

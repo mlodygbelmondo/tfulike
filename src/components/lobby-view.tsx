@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { useRealtimeChannel } from "@/lib/use-realtime-channel";
 import { PlayerAvatar } from "@/components/player-avatar";
 import { getStoredSession } from "@/lib/game";
 import type { PlaybackMode, Player, Room, SyncStatus } from "@/lib/types";
@@ -128,42 +129,24 @@ export function LobbyView({
 
   useEffect(() => {
     fetchData();
+  }, [fetchData]);
 
-    // Subscribe to realtime changes
-    const supabase = createClient();
-
-    let channel = supabase
-      .channel(`room:${pin}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "rooms",
-          filter: `pin=eq.${pin}`,
-        },
-        () => fetchData(),
-      );
-
-    if (roomId) {
-      channel = channel.on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "players",
-          filter: `room_id=eq.${roomId}`,
-        },
-        () => fetchData(),
-      );
-    }
-
-    channel.subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [fetchData, pin, roomId]);
+  useRealtimeChannel({
+    channelName: `room:${pin}`,
+    changes: [
+      { event: "*", table: "rooms", filter: `pin=eq.${pin}` },
+      ...(roomId
+        ? [
+            {
+              event: "*" as const,
+              table: "players",
+              filter: `room_id=eq.${roomId}`,
+            },
+          ]
+        : []),
+    ],
+    onChange: fetchData,
+  });
 
   async function handleRoundCountChange(count: number) {
     setSelectedRounds(count);
