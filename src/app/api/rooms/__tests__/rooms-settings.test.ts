@@ -24,7 +24,8 @@ function makeChain(resolveValue: { data: unknown; error: unknown }) {
   const chain: Record<string, unknown> = {};
   const proxy: unknown = new Proxy(chain, {
     get(target, prop) {
-      if (prop === "then") return (resolve: (v: unknown) => void) => resolve(resolveValue);
+      if (prop === "then")
+        return (resolve: (v: unknown) => void) => resolve(resolveValue);
       if (prop in target) return target[prop as keyof typeof target];
       const fn = vi.fn(() => proxy);
       target[prop as string] = fn;
@@ -53,7 +54,9 @@ describe("POST /api/rooms/[pin]/settings", () => {
       from: vi.fn(() => makeChain({ data: null, error: null })),
     };
     vi.mocked(createClient).mockResolvedValue(sb as never);
-    vi.mocked(createAdminClient).mockReturnValue({ from: vi.fn(() => makeChain({ data: null, error: null })) } as never);
+    vi.mocked(createAdminClient).mockReturnValue({
+      from: vi.fn(() => makeChain({ data: null, error: null })),
+    } as never);
 
     const res = await POST(makeRequest({ max_rounds: 6 }), { params });
     expect(res.status).toBe(401);
@@ -62,10 +65,14 @@ describe("POST /api/rooms/[pin]/settings", () => {
   it("returns 404 when room is not found", async () => {
     const sb = {
       auth: makeAuthMock("auth-host"),
-      from: vi.fn(() => makeChain({ data: null, error: { message: "not found" } })),
+      from: vi.fn(() =>
+        makeChain({ data: null, error: { message: "not found" } }),
+      ),
     };
     vi.mocked(createClient).mockResolvedValue(sb as never);
-    vi.mocked(createAdminClient).mockReturnValue({ from: vi.fn(() => makeChain({ data: null, error: null })) } as never);
+    vi.mocked(createAdminClient).mockReturnValue({
+      from: vi.fn(() => makeChain({ data: null, error: null })),
+    } as never);
 
     const res = await POST(makeRequest({ max_rounds: 6 }), { params });
     expect(res.status).toBe(404);
@@ -73,7 +80,12 @@ describe("POST /api/rooms/[pin]/settings", () => {
 
   it("returns 403 when user is not the host", async () => {
     let idx = 0;
-    const room = { id: "room-1", pin: "1234", host_player_id: "host-player", settings: {} };
+    const room = {
+      id: "room-1",
+      pin: "1234",
+      host_player_id: "host-player",
+      settings: {},
+    };
     const results = [
       { data: room, error: null },
       { data: { id: "guest-player", user_id: "auth-guest" }, error: null },
@@ -87,7 +99,9 @@ describe("POST /api/rooms/[pin]/settings", () => {
       }),
     };
     vi.mocked(createClient).mockResolvedValue(sb as never);
-    vi.mocked(createAdminClient).mockReturnValue({ from: vi.fn(() => makeChain({ data: null, error: null })) } as never);
+    vi.mocked(createAdminClient).mockReturnValue({
+      from: vi.fn(() => makeChain({ data: null, error: null })),
+    } as never);
 
     const res = await POST(makeRequest({ max_rounds: 6 }), { params });
     expect(res.status).toBe(403);
@@ -95,6 +109,13 @@ describe("POST /api/rooms/[pin]/settings", () => {
 
   it("returns 400 for an invalid round count", async () => {
     const res = await POST(makeRequest({ max_rounds: -1 }), { params });
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 for an invalid playback mode", async () => {
+    const res = await POST(makeRequest({ playback_mode: "mobile_magic" }), {
+      params,
+    });
     expect(res.status).toBe(400);
   });
 
@@ -132,5 +153,43 @@ describe("POST /api/rooms/[pin]/settings", () => {
     const json = await res.json();
     expect(json.room.settings.max_rounds).toBe(6);
     expect(json.room.settings.round_timer).toBe(15);
+  });
+
+  it("updates playback mode while preserving other settings", async () => {
+    let idx = 0;
+    const room = {
+      id: "room-1",
+      pin: "1234",
+      host_player_id: "host-player",
+      settings: { max_rounds: 6, playback_mode: "standard" },
+    };
+    const updatedRoom = {
+      ...room,
+      settings: { max_rounds: 6, playback_mode: "host_desktop" },
+    };
+    const sb = {
+      auth: makeAuthMock("auth-host"),
+      from: vi.fn(() => {
+        const baseResults = [
+          { data: room, error: null },
+          { data: { id: "host-player", user_id: "auth-host" }, error: null },
+        ];
+        const r = baseResults[idx] || { data: null, error: null };
+        idx += 1;
+        return makeChain(r);
+      }),
+    };
+    vi.mocked(createClient).mockResolvedValue(sb as never);
+    vi.mocked(createAdminClient).mockReturnValue({
+      from: vi.fn(() => makeChain({ data: updatedRoom, error: null })),
+    } as never);
+
+    const res = await POST(makeRequest({ playback_mode: "host_desktop" }), {
+      params,
+    });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.room.settings.max_rounds).toBe(6);
+    expect(json.room.settings.playback_mode).toBe("host_desktop");
   });
 });

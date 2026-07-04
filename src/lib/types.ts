@@ -4,6 +4,7 @@
 export type RoomStatus = "lobby" | "playing" | "finished";
 export type RoundStatus = "voting" | "reveal" | "done";
 export type SyncStatus = "idle" | "syncing" | "synced" | "error";
+export type PlaybackMode = "standard" | "host_desktop";
 
 // ============================================
 // Auth / Profile types
@@ -54,6 +55,7 @@ export type SoloVideoSource = "like" | "bookmark";
 export interface RoomSettings {
   max_rounds: number | null; // null = auto (players × 3)
   total_rounds?: number; // set at game start
+  playback_mode?: PlaybackMode;
 }
 
 export interface Room {
@@ -153,3 +155,4 @@ export const PLAYER_COLORS = [
 
 // Allowed round count options for host selection
 export const ROUND_COUNT_OPTIONS = [3, 6, 7, 10, 15, 25, 35, 50, 100] as const;
+export const PLAYBACK_MODE_OPTIONS = ["standard", "host_desktop"] as const;

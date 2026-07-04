@@ -6,7 +6,16 @@ import type { Dictionary } from "@/lib/dictionaries";
  */
 export const mockDict: Dictionary = {
   app: { title: "tf u like?", description: "The TikTok party guessing game" },
-  home: { subtitle: "Guess whose TikTok it is!", createRoom: "Create Room", joinRoom: "Join Room", or: "or", rejoinPrompt: "You have an active session in room {pin}", rejoin: "Rejoin", dismiss: "Dismiss", editProfile: "Edit profile" },
+  home: {
+    subtitle: "Guess whose TikTok it is!",
+    createRoom: "Create Room",
+    joinRoom: "Join Room",
+    or: "or",
+    rejoinPrompt: "You have an active session in room {pin}",
+    rejoin: "Rejoin",
+    dismiss: "Dismiss",
+    editProfile: "Edit profile",
+  },
   profile: {
     title: "Set up your profile",
     subtitle: "You only need to do this once.",
@@ -66,6 +75,15 @@ export const mockDict: Dictionary = {
     syncStatus: "Sync",
     desktopSyncHint:
       "Sync works only on desktop Chrome with an open TikTok tab. Mobile PWA can join and play, but cannot sync likes.",
+    playbackMode: "Playback mode",
+    playbackModeStandard: "Standard",
+    playbackModeStandardHint:
+      "Every player should play from desktop Chrome with the extension.",
+    playbackModeHostDesktop: "Host desktop (experimental)",
+    playbackModeHostDesktopHint:
+      "Only the host needs the extension during the game; mobile players try refreshed direct links.",
+    hostExtensionRequired:
+      "Experimental mode needs the host on desktop Chrome with the extension.",
   },
   game: {
     round: "Round",
@@ -89,8 +107,10 @@ export const mockDict: Dictionary = {
     undoSkip: "Undo skip",
     skipVotes: "Skip votes: {count}/{total}",
     waitingForSkips: "Waiting for skips from:",
-    soloEmpty: "You need synced TikTok videos with playable URLs to use Solo mode.",
-    soloEmptyBookmarks: "No synced TikTok bookmarks with playable video URLs yet.",
+    soloEmpty:
+      "You need synced TikTok videos with playable URLs to use Solo mode.",
+    soloEmptyBookmarks:
+      "No synced TikTok bookmarks with playable video URLs yet.",
     soloEmptyLikes: "No synced TikTok likes with playable video URLs yet.",
     soloLoading: "Loading solo mode...",
     soloSourceBookmarks: "Bookmarks",
@@ -105,8 +125,19 @@ export const mockDict: Dictionary = {
     soloModeHandsFree: "Playback mode: Hands-free",
     soloModeManual: "Playback mode: Manual",
   },
-  scores: { title: "Scoreboard", player: "Player", score: "Score", continue: "Continue" },
-  results: { title: "Game Over!", winner: "Winner", playAgain: "Play Again", newGame: "New Game", rank: "Rank" },
+  scores: {
+    title: "Scoreboard",
+    player: "Player",
+    score: "Score",
+    continue: "Continue",
+  },
+  results: {
+    title: "Game Over!",
+    winner: "Winner",
+    playAgain: "Play Again",
+    newGame: "New Game",
+    rank: "Rank",
+  },
   auth: {
     signInWithGoogle: "Sign in with Google",
     signOut: "Sign out",
@@ -127,7 +158,8 @@ export const mockDict: Dictionary = {
     syncError: "Sync failed. Try again.",
     syncRetry: "Retry",
     skipSync: "Skip (no desktop Chrome)",
-    desktopSyncHint: "Open TikTok in desktop Chrome with the tf u like? extension installed.",
+    desktopSyncHint:
+      "Open TikTok in desktop Chrome with the tf u like? extension installed.",
     step3Title: "You're all set!",
     step3Subtitle: "Time to play",
     finish: "Let's go!",

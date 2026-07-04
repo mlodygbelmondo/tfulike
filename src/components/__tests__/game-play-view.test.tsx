@@ -21,11 +21,16 @@ import {
   requestVideoDataUri,
 } from "@/lib/extension";
 
-function makeChain(resolveValue: { data: unknown; error?: unknown; count?: number | null }) {
+function makeChain(resolveValue: {
+  data: unknown;
+  error?: unknown;
+  count?: number | null;
+}) {
   const chain: Record<string, unknown> = {};
   const proxy: unknown = new Proxy(chain, {
     get(target, prop) {
-      if (prop === "then") return (resolve: (v: unknown) => void) => resolve(resolveValue);
+      if (prop === "then")
+        return (resolve: (v: unknown) => void) => resolve(resolveValue);
       if (prop in target) return target[prop as keyof typeof target];
       const fn = vi.fn(() => proxy);
       target[prop as string] = fn;
@@ -48,12 +53,17 @@ function makeSupabaseMock(overrides: {
   video: Record<string, unknown>;
   votes?: Array<{ player_id: string; guessed_player_id: string }>;
 }) {
-  const authGetUser = vi.fn().mockResolvedValue({ data: { user: makeAuthUser() } });
+  const authGetUser = vi
+    .fn()
+    .mockResolvedValue({ data: { user: makeAuthUser() } });
 
   const supabase = {
     auth: { getUser: authGetUser },
     from: vi.fn((table: string) => {
-      const responses: Record<string, { data: unknown; error: unknown; count?: number | null }> = {
+      const responses: Record<
+        string,
+        { data: unknown; error: unknown; count?: number | null }
+      > = {
         rooms: { data: overrides.room, error: null },
         players: { data: overrides.players, error: null },
         rounds: { data: overrides.round, error: null },
@@ -61,9 +71,7 @@ function makeSupabaseMock(overrides: {
         votes: { data: overrides.votes ?? [], error: null },
       };
 
-      return makeChain(
-        responses[table] || { data: null, error: null }
-      );
+      return makeChain(responses[table] || { data: null, error: null });
     }),
     channel: vi.fn(() => ({
       on: vi.fn().mockReturnThis(),
@@ -78,7 +86,7 @@ function makeSupabaseMock(overrides: {
 function storeSession(playerId: string, roomPin: string) {
   localStorage.setItem(
     "tfulike_session",
-    JSON.stringify({ playerId, roomPin })
+    JSON.stringify({ playerId, roomPin }),
   );
 }
 
@@ -173,7 +181,9 @@ describe("GamePlayView", () => {
     render(<GamePlayView lang="pl" pin="1234" dict={mockDict} />);
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /Alice/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /Alice/i }),
+      ).toBeInTheDocument();
       expect(screen.getByRole("button", { name: /Bob/i })).toBeInTheDocument();
     });
   });
@@ -194,11 +204,13 @@ describe("GamePlayView", () => {
     vi.mocked(createClient).mockReturnValue(supabase as never);
     vi.mocked(requestVideoDataUri).mockResolvedValue(dataUri);
 
-    const { container } = render(<GamePlayView lang="pl" pin="1234" dict={mockDict} />);
+    const { container } = render(
+      <GamePlayView lang="pl" pin="1234" dict={mockDict} />,
+    );
 
     await waitFor(() => {
       const videoElement = container.querySelector(
-        'video:not([aria-hidden="true"])'
+        'video:not([aria-hidden="true"])',
       ) as HTMLVideoElement | null;
       expect(videoElement).not.toBeNull();
       expect(requestVideoDataUri).toHaveBeenCalledWith(rawVideoUrl);
@@ -206,6 +218,38 @@ describe("GamePlayView", () => {
       expect(videoElement?.muted).toBe(false);
       expect(videoElement?.hasAttribute("controls")).toBe(false);
     });
+  });
+
+  it("uses direct video URLs in experimental host-desktop mode when extension is absent", async () => {
+    storeSession("p1", "1234");
+
+    const rawVideoUrl = "https://www.tiktok.com/video/example.mp4?foo=bar";
+    const supabase = makeSupabaseMock({
+      room: {
+        ...makeRoom(),
+        settings: { total_rounds: 3, playback_mode: "host_desktop" },
+      },
+      players: [makePlayer({ is_host: false })],
+      round: makeRound(),
+      video: makeVideo({ video_url: rawVideoUrl, video_urls: [rawVideoUrl] }),
+    });
+
+    vi.mocked(createClient).mockReturnValue(supabase as never);
+    vi.mocked(checkExtensionPresent).mockResolvedValue(null);
+
+    const { container } = render(
+      <GamePlayView lang="pl" pin="1234" dict={mockDict} />,
+    );
+
+    await waitFor(() => {
+      const videoElement = container.querySelector(
+        'video:not([aria-hidden="true"])',
+      ) as HTMLVideoElement | null;
+      expect(videoElement).not.toBeNull();
+      expect(videoElement?.getAttribute("src")).toBe(rawVideoUrl);
+    });
+
+    expect(requestVideoDataUri).not.toHaveBeenCalled();
   });
 
   it("renders contain-mode video inside a centered foreground overlay", async () => {
@@ -220,19 +264,25 @@ describe("GamePlayView", () => {
 
     vi.mocked(createClient).mockReturnValue(supabase as never);
 
-    const { container } = render(<GamePlayView lang="pl" pin="1234" dict={mockDict} />);
+    const { container } = render(
+      <GamePlayView lang="pl" pin="1234" dict={mockDict} />,
+    );
 
     await waitFor(() => {
       const videoElement = container.querySelector(
-        'video:not([aria-hidden="true"])'
+        'video:not([aria-hidden="true"])',
       ) as HTMLVideoElement | null;
       expect(videoElement).not.toBeNull();
       expect(videoElement?.className).toContain("h-full");
       expect(videoElement?.className).toContain("w-auto");
       expect(videoElement?.className).toContain("max-w-none");
       expect(videoElement?.className).not.toContain("h-full w-full");
-      expect(videoElement?.parentElement?.className).toContain("absolute inset-0");
-      expect(videoElement?.parentElement?.className).toContain("place-items-center");
+      expect(videoElement?.parentElement?.className).toContain(
+        "absolute inset-0",
+      );
+      expect(videoElement?.parentElement?.className).toContain(
+        "place-items-center",
+      );
     });
   });
 
@@ -244,7 +294,7 @@ describe("GamePlayView", () => {
       () =>
         new Promise((resolve) => {
           resolveVideo = resolve;
-        })
+        }),
     );
 
     const supabase = makeSupabaseMock({
@@ -262,7 +312,9 @@ describe("GamePlayView", () => {
       expect(screen.getByText("Loading video...")).toBeInTheDocument();
     });
 
-    expect(screen.queryByText("Video unavailable in this round.")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Video unavailable in this round."),
+    ).not.toBeInTheDocument();
 
     expect(resolveVideo).toBeTypeOf("function");
     resolveVideo?.("blob:loaded-video");
@@ -287,7 +339,9 @@ describe("GamePlayView", () => {
     render(<GamePlayView lang="pl" pin="1234" dict={mockDict} />);
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Tap to mute" })).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Tap to mute" }),
+      ).toBeInTheDocument();
     });
   });
 
@@ -296,7 +350,9 @@ describe("GamePlayView", () => {
 
     const playMock = vi
       .spyOn(window.HTMLMediaElement.prototype, "play")
-      .mockRejectedValueOnce(new DOMException("Autoplay blocked", "NotAllowedError"))
+      .mockRejectedValueOnce(
+        new DOMException("Autoplay blocked", "NotAllowedError"),
+      )
       .mockResolvedValue(undefined);
 
     const supabase = makeSupabaseMock({
@@ -308,11 +364,13 @@ describe("GamePlayView", () => {
 
     vi.mocked(createClient).mockReturnValue(supabase as never);
 
-    const { container } = render(<GamePlayView lang="pl" pin="1234" dict={mockDict} />);
+    const { container } = render(
+      <GamePlayView lang="pl" pin="1234" dict={mockDict} />,
+    );
 
     const videoElement = await waitFor(() => {
       const element = container.querySelector(
-        'video:not([aria-hidden="true"])'
+        'video:not([aria-hidden="true"])',
       ) as HTMLVideoElement | null;
       expect(element).not.toBeNull();
       return element;
@@ -323,7 +381,9 @@ describe("GamePlayView", () => {
     await waitFor(() => {
       expect(playMock).toHaveBeenCalledTimes(2);
       expect(videoElement?.muted).toBe(true);
-      expect(screen.getByRole("button", { name: "Tap for sound" })).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Tap for sound" }),
+      ).toBeInTheDocument();
     });
 
     playMock.mockRestore();
@@ -335,10 +395,13 @@ describe("GamePlayView", () => {
     vi.mocked(checkExtensionPresent).mockResolvedValue("0.1.0");
     vi.mocked(requestVideoRefresh).mockResolvedValue({
       ok: true,
-      video_urls: ["https://v19-webapp-prime.tiktok.com/video/example.mp4?foo=bar"],
+      video_urls: [
+        "https://v19-webapp-prime.tiktok.com/video/example.mp4?foo=bar",
+      ],
     });
 
-    const initialRawVideoUrl = "https://www.tiktok.com/video/expired.mp4?foo=bar";
+    const initialRawVideoUrl =
+      "https://www.tiktok.com/video/expired.mp4?foo=bar";
     const refreshedRawVideoUrl =
       "https://v19-webapp-prime.tiktok.com/video/example.mp4?foo=bar";
     const initialDataUri = "blob:expired-video";
@@ -360,16 +423,22 @@ describe("GamePlayView", () => {
       .mockResolvedValueOnce(initialDataUri)
       .mockResolvedValueOnce(refreshedDataUri);
 
-    const { container } = render(<GamePlayView lang="pl" pin="1234" dict={mockDict} />);
+    const { container } = render(
+      <GamePlayView lang="pl" pin="1234" dict={mockDict} />,
+    );
 
     await waitFor(() => {
-      const videoElement = container.querySelector('video:not([aria-hidden="true"])');
+      const videoElement = container.querySelector(
+        'video:not([aria-hidden="true"])',
+      );
       expect(videoElement).not.toBeNull();
       expect(requestVideoDataUri).toHaveBeenCalledWith(initialRawVideoUrl);
       expect(videoElement?.getAttribute("src")).toBe(initialDataUri);
     });
 
-    const initialVideoElement = container.querySelector('video:not([aria-hidden="true"])');
+    const initialVideoElement = container.querySelector(
+      'video:not([aria-hidden="true"])',
+    );
     expect(initialVideoElement).not.toBeNull();
     fireEvent.error(initialVideoElement as HTMLVideoElement);
 
@@ -380,7 +449,9 @@ describe("GamePlayView", () => {
       });
       expect(requestVideoDataUri).toHaveBeenCalledWith(refreshedRawVideoUrl);
 
-      const refreshedVideoElement = container.querySelector('video:not([aria-hidden="true"])');
+      const refreshedVideoElement = container.querySelector(
+        'video:not([aria-hidden="true"])',
+      );
       expect(refreshedVideoElement?.getAttribute("src")).toBe(refreshedDataUri);
     });
 
@@ -396,10 +467,13 @@ describe("GamePlayView", () => {
     vi.mocked(checkExtensionPresent).mockResolvedValue("0.1.0");
     vi.mocked(requestVideoRefresh).mockResolvedValue({
       ok: true,
-      video_urls: ["https://v19-webapp-prime.tiktok.com/video/example.mp4?foo=bar"],
+      video_urls: [
+        "https://v19-webapp-prime.tiktok.com/video/example.mp4?foo=bar",
+      ],
     });
 
-    const initialRawVideoUrl = "https://www.tiktok.com/video/expired.mp4?foo=bar";
+    const initialRawVideoUrl =
+      "https://www.tiktok.com/video/expired.mp4?foo=bar";
     const refreshedRawVideoUrl =
       "https://v19-webapp-prime.tiktok.com/video/example.mp4?foo=bar";
     const initialDataUri = "blob:expired-video";
@@ -421,22 +495,34 @@ describe("GamePlayView", () => {
       .mockResolvedValueOnce(initialDataUri)
       .mockResolvedValueOnce(refreshedDataUri);
 
-    const { container } = render(<GamePlayView lang="pl" pin="1234" dict={mockDict} />);
+    const { container } = render(
+      <GamePlayView lang="pl" pin="1234" dict={mockDict} />,
+    );
 
     await waitFor(() => {
-      const videoElement = container.querySelector('video:not([aria-hidden="true"])');
+      const videoElement = container.querySelector(
+        'video:not([aria-hidden="true"])',
+      );
       expect(videoElement?.getAttribute("src")).toBe(initialDataUri);
     });
 
-    const initialVideoElement = container.querySelector('video:not([aria-hidden="true"])');
+    const initialVideoElement = container.querySelector(
+      'video:not([aria-hidden="true"])',
+    );
     expect(initialVideoElement).not.toBeNull();
     fireEvent.error(initialVideoElement as HTMLVideoElement);
 
-    const transientVideoElement = container.querySelector('video:not([aria-hidden="true"])');
-    expect(transientVideoElement?.getAttribute("src")).not.toBe(refreshedRawVideoUrl);
+    const transientVideoElement = container.querySelector(
+      'video:not([aria-hidden="true"])',
+    );
+    expect(transientVideoElement?.getAttribute("src")).not.toBe(
+      refreshedRawVideoUrl,
+    );
 
     await waitFor(() => {
-      const refreshedVideoElement = container.querySelector('video:not([aria-hidden="true"])');
+      const refreshedVideoElement = container.querySelector(
+        'video:not([aria-hidden="true"])',
+      );
       expect(refreshedVideoElement?.getAttribute("src")).toBe(refreshedDataUri);
     });
   });
@@ -467,12 +553,12 @@ describe("GamePlayView", () => {
     vi.mocked(requestVideoDataUri).mockResolvedValue("blob:stable-video");
 
     const { container, rerender } = render(
-      <GamePlayView lang="pl" pin="1234" dict={mockDict} />
+      <GamePlayView lang="pl" pin="1234" dict={mockDict} />,
     );
 
     const initialVideoElement = await waitFor(() => {
       const element = container.querySelector(
-        'video:not([aria-hidden="true"])'
+        'video:not([aria-hidden="true"])',
       ) as HTMLVideoElement | null;
       expect(element).not.toBeNull();
       return element;
@@ -482,7 +568,7 @@ describe("GamePlayView", () => {
 
     await waitFor(() => {
       const currentVideoElement = container.querySelector(
-        'video:not([aria-hidden="true"])'
+        'video:not([aria-hidden="true"])',
       ) as HTMLVideoElement | null;
       expect(currentVideoElement).toBe(initialVideoElement);
     });
@@ -512,10 +598,14 @@ describe("GamePlayView", () => {
 
     vi.mocked(createClient).mockReturnValue(supabase as never);
 
-    const { container } = render(<GamePlayView lang="pl" pin="1234" dict={mockDict} />);
+    const { container } = render(
+      <GamePlayView lang="pl" pin="1234" dict={mockDict} />,
+    );
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /Alice/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /Alice/i }),
+      ).toBeInTheDocument();
     });
 
     const main = container.querySelector("main");
@@ -531,14 +621,16 @@ describe("GamePlayView", () => {
     storeSession("p1", "1234");
 
     const nativeSetTimeout = global.setTimeout;
-    const setTimeoutSpy = vi
-      .spyOn(global, "setTimeout")
-      .mockImplementation(((handler: TimerHandler, timeout?: number, ...args: unknown[]) => {
-        if (timeout === 2400) {
-          return nativeSetTimeout(handler, 0, ...args);
-        }
-        return nativeSetTimeout(handler, timeout, ...args);
-      }) as typeof setTimeout);
+    const setTimeoutSpy = vi.spyOn(global, "setTimeout").mockImplementation(((
+      handler: TimerHandler,
+      timeout?: number,
+      ...args: unknown[]
+    ) => {
+      if (timeout === 2400) {
+        return nativeSetTimeout(handler, 0, ...args);
+      }
+      return nativeSetTimeout(handler, timeout, ...args);
+    }) as typeof setTimeout);
 
     const players = [
       makePlayer(),
@@ -561,36 +653,35 @@ describe("GamePlayView", () => {
 
     vi.mocked(createClient).mockReturnValue(supabase as never);
 
-    const fetchSpy = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.includes("/rounds/reveal")) {
+    const fetchSpy = vi
+      .fn()
+      .mockImplementation(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes("/rounds/reveal")) {
+          return {
+            ok: true,
+            json: async () => ({
+              correct_player_id: "p1",
+              votes: [
+                { player_id: "p1", guessed_player_id: "p1", is_correct: true },
+                { player_id: "p2", guessed_player_id: "p1", is_correct: true },
+              ],
+              score_deltas: { p1: 12, p2: 10 },
+              players: [
+                { ...players[0], score: 12 },
+                { ...players[1], score: 10 },
+              ],
+            }),
+          } as Response;
+        }
+
         return {
           ok: true,
-          json: async () => ({
-            correct_player_id: "p1",
-            votes: [
-              { player_id: "p1", guessed_player_id: "p1", is_correct: true },
-              { player_id: "p2", guessed_player_id: "p1", is_correct: true },
-            ],
-            score_deltas: { p1: 12, p2: 10 },
-            players: [
-              { ...players[0], score: 12 },
-              { ...players[1], score: 10 },
-            ],
-          }),
+          json: async () => ({}),
         } as Response;
-      }
+      });
 
-      return {
-        ok: true,
-        json: async () => ({}),
-      } as Response;
-    });
-
-    vi.stubGlobal(
-      "fetch",
-      fetchSpy
-    );
+    vi.stubGlobal("fetch", fetchSpy);
 
     render(<GamePlayView lang="pl" pin="1234" dict={mockDict} />);
 
@@ -602,7 +693,7 @@ describe("GamePlayView", () => {
     await waitFor(() => {
       expect(fetchSpy).toHaveBeenCalledWith(
         expect.stringContaining("/rounds/reveal"),
-        expect.objectContaining({ method: "POST" })
+        expect.objectContaining({ method: "POST" }),
       );
     });
     expect(await screen.findByTestId("reveal-overlay")).toBeInTheDocument();
@@ -665,7 +756,12 @@ describe("GamePlayView", () => {
     storeSession("p1", "1234");
 
     const players = [
-      makePlayer({ id: "p1", nickname: "Alice", score: 0, created_at: "2025-01-01T00:00:00Z" }),
+      makePlayer({
+        id: "p1",
+        nickname: "Alice",
+        score: 0,
+        created_at: "2025-01-01T00:00:00Z",
+      }),
       makePlayer({
         id: "p2",
         user_id: "auth-user-2",
@@ -700,22 +796,22 @@ describe("GamePlayView", () => {
     render(<GamePlayView lang="pl" pin="1234" dict={mockDict} />);
 
     const votingDock = await screen.findByTestId("voting-dock");
-    const labels = Array.from(votingDock.querySelectorAll("span.truncate")).map((element) =>
-      element.textContent?.trim()
+    const labels = Array.from(votingDock.querySelectorAll("span.truncate")).map(
+      (element) => element.textContent?.trim(),
     );
 
-    expect(labels).toEqual([
-      "Alice",
-      "Bob",
-      "Cara",
-    ]);
+    expect(labels).toEqual(["Alice", "Bob", "Cara"]);
   });
 
   it("shows skip consensus state and remaining players before a unanimous skip", async () => {
     storeSession("p1", "1234");
 
     const players = [
-      makePlayer({ id: "p1", nickname: "Alice", created_at: "2025-01-01T00:00:00Z" }),
+      makePlayer({
+        id: "p1",
+        nickname: "Alice",
+        created_at: "2025-01-01T00:00:00Z",
+      }),
       makePlayer({
         id: "p2",
         user_id: "auth-user-2",
@@ -745,26 +841,30 @@ describe("GamePlayView", () => {
 
     vi.mocked(createClient).mockReturnValue(supabase as never);
 
-    const fetchSpy = vi.fn().mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url.includes("/rounds/skip") && init?.method === "POST") {
-        return {
-          ok: true,
-          json: async () => ({
-            all_skipped: false,
-            finished: false,
-            skip_count: 1,
-            player_count: 3,
-            skipped_player_ids: ["p1"],
-          }),
-        } as Response;
-      }
+    const fetchSpy = vi
+      .fn()
+      .mockImplementation(
+        async (input: RequestInfo | URL, init?: RequestInit) => {
+          const url = String(input);
+          if (url.includes("/rounds/skip") && init?.method === "POST") {
+            return {
+              ok: true,
+              json: async () => ({
+                all_skipped: false,
+                finished: false,
+                skip_count: 1,
+                player_count: 3,
+                skipped_player_ids: ["p1"],
+              }),
+            } as Response;
+          }
 
-      return {
-        ok: true,
-        json: async () => ({}),
-      } as Response;
-    });
+          return {
+            ok: true,
+            json: async () => ({}),
+          } as Response;
+        },
+      );
 
     vi.stubGlobal("fetch", fetchSpy);
 
@@ -773,9 +873,13 @@ describe("GamePlayView", () => {
     fireEvent.click(await screen.findByRole("button", { name: /skip video/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /undo skip/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /undo skip/i }),
+      ).toBeInTheDocument();
       expect(screen.getByText(/skip votes: 1\/3/i)).toBeInTheDocument();
-      expect(screen.getByText(/waiting for skips from:\s*bob, cara/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/waiting for skips from:\s*bob, cara/i),
+      ).toBeInTheDocument();
     });
   });
 
@@ -788,7 +892,10 @@ describe("GamePlayView", () => {
       round: makeRound(),
       video: makeVideo({
         video_url: "https://example.com/video-a.mp4",
-        video_urls: ["https://example.com/video-a.mp4", "https://example.com/video-b.mp4"],
+        video_urls: [
+          "https://example.com/video-a.mp4",
+          "https://example.com/video-b.mp4",
+        ],
       }),
     });
 
@@ -797,11 +904,13 @@ describe("GamePlayView", () => {
       .mockResolvedValueOnce("blob:video-a")
       .mockResolvedValueOnce("blob:video-b");
 
-    const { container } = render(<GamePlayView lang="pl" pin="1234" dict={mockDict} />);
+    const { container } = render(
+      <GamePlayView lang="pl" pin="1234" dict={mockDict} />,
+    );
 
     const videoElement = await waitFor(() => {
       const element = container.querySelector(
-        'video:not([aria-hidden="true"])'
+        'video:not([aria-hidden="true"])',
       ) as HTMLVideoElement | null;
       expect(element).not.toBeNull();
       return element;
@@ -819,9 +928,12 @@ describe("GamePlayView", () => {
     fireEvent.loadedMetadata(videoElement as HTMLVideoElement);
 
     await waitFor(() => {
-      expect(requestVideoDataUri).toHaveBeenNthCalledWith(2, "https://example.com/video-b.mp4");
+      expect(requestVideoDataUri).toHaveBeenNthCalledWith(
+        2,
+        "https://example.com/video-b.mp4",
+      );
       const refreshedVideo = container.querySelector(
-        'video:not([aria-hidden="true"])'
+        'video:not([aria-hidden="true"])',
       ) as HTMLVideoElement | null;
       expect(refreshedVideo?.getAttribute("src")).toBe("blob:video-b");
     });

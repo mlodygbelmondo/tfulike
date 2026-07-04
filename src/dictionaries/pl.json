@@ -70,7 +70,13 @@
     "extensionNotFound": "Najpierw zainstaluj desktopowe rozszerzenie tf u like?",
     "syncIdle": "Nie zsynchronizowano",
     "syncStatus": "Synchronizacja",
-    "desktopSyncHint": "Synchronizacja działa tylko w Chrome na komputerze z otwartą kartą TikToka. Mobilna PWA pozwala dołączyć i grać, ale nie zsynchronizuje lajków."
+    "desktopSyncHint": "Synchronizacja działa tylko w Chrome na komputerze z otwartą kartą TikToka. Mobilna PWA pozwala dołączyć i grać, ale nie zsynchronizuje lajków.",
+    "playbackMode": "Tryb odtwarzania",
+    "playbackModeStandard": "Standardowy",
+    "playbackModeStandardHint": "Każdy gracz powinien grać z Chrome na komputerze i rozszerzeniem.",
+    "playbackModeHostDesktop": "Host na desktopie (eksperymentalny)",
+    "playbackModeHostDesktopHint": "Tylko host potrzebuje rozszerzenia podczas gry; mobile próbują świeżych linków bezpośrednich.",
+    "hostExtensionRequired": "Tryb eksperymentalny wymaga hosta w Chrome na komputerze z rozszerzeniem."
   },
   "game": {
     "round": "Runda",

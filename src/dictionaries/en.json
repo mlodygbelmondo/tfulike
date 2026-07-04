@@ -70,7 +70,13 @@
     "extensionNotFound": "Install the tf u like? desktop extension first",
     "syncIdle": "Not synced",
     "syncStatus": "Sync",
-    "desktopSyncHint": "Sync works only on desktop Chrome with an open TikTok tab. Mobile PWA can join and play, but cannot sync likes."
+    "desktopSyncHint": "Sync works only on desktop Chrome with an open TikTok tab. Mobile PWA can join and play, but cannot sync likes.",
+    "playbackMode": "Playback mode",
+    "playbackModeStandard": "Standard",
+    "playbackModeStandardHint": "Every player should play from desktop Chrome with the extension.",
+    "playbackModeHostDesktop": "Host desktop (experimental)",
+    "playbackModeHostDesktopHint": "Only the host needs the extension during the game; mobile players try refreshed direct links.",
+    "hostExtensionRequired": "Experimental mode needs the host on desktop Chrome with the extension."
   },
   "game": {
     "round": "Round",
