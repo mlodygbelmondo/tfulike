@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ColorPicker } from "@/components/color-picker";
+import { TikTokConnectCard } from "@/components/tiktok-connect-card";
 import { PLAYER_COLORS } from "@/lib/types";
 import type { SyncStatus } from "@/lib/types";
 import type { Dictionary } from "@/lib/dictionaries";
@@ -292,6 +293,13 @@ export function OnboardingFlow({ lang, dict, initialProfile }: OnboardingFlowPro
                   {d.syncRetry}
                 </button>
               </div>
+            )}
+
+            {syncStatus !== "synced" && syncStatus !== "syncing" && (
+              <TikTokConnectCard
+                dict={dict}
+                onSynced={() => setSyncStatus("synced")}
+              />
             )}
           </div>
 

@@ -51,6 +51,36 @@ export interface UserBookmark {
   created_at: string;
 }
 
+export interface TikTokConnection {
+  user_id: string;
+  open_id: string | null;
+  access_token: string;
+  refresh_token: string | null;
+  access_token_expires_at: string | null;
+  refresh_token_expires_at: string | null;
+  scope: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type TikTokDataRequestStatus =
+  | "pending"
+  | "downloading"
+  | "imported"
+  | "expired"
+  | "cancelled";
+
+export interface TikTokDataRequest {
+  id: string;
+  user_id: string;
+  request_id: number;
+  status: TikTokDataRequestStatus;
+  likes_imported: number | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export type SoloVideoSource = "like" | "bookmark";
 
 export interface RoomSettings {

@@ -161,6 +161,16 @@ export const mockDict: Dictionary = {
     skipSync: "Skip (no desktop Chrome)",
     desktopSyncHint:
       "Open TikTok in desktop Chrome with the tf u like? extension installed.",
+    tiktokConnect: "Connect TikTok account (beta)",
+    tiktokConnectHint:
+      "No extension? Connect your TikTok account and we'll import your liked videos automatically.",
+    tiktokSyncing: "Importing your likes from TikTok...",
+    tiktokWaiting:
+      "TikTok is still preparing your data. This can take a few minutes.",
+    tiktokCheckAgain: "Check again",
+    tiktokSynced: "Likes imported!",
+    tiktokError: "TikTok import failed. Try again.",
+    tiktokRetry: "Retry import",
     step3Title: "You're all set!",
     step3Subtitle: "Time to play",
     finish: "Let's go!",

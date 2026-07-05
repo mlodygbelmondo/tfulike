@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>tf u like? — TikTok Data Portability UX mockups</title>
+<style>
+  :root {
+    --bg: #0b0b0f;
+    --surface: #17171f;
+    --surface-2: #24242e;
+    --accent: #ff2d55;
+    --text: #f5f5f7;
+    --muted: #9a9aa5;
+    --green: #34c759;
+  }
+  * { box-sizing: border-box; margin: 0; font-family: "Segoe UI", system-ui, sans-serif; }
+  body { background: #1d1d24; padding: 40px; display: flex; gap: 40px; flex-wrap: wrap; justify-content: center; }
+  .phone {
+    width: 360px; height: 720px; background: var(--bg); border-radius: 36px;
+    border: 6px solid #000; padding: 28px 20px; display: flex; flex-direction: column;
+    color: var(--text); position: relative; overflow: hidden;
+  }
+  .label { color: #fff; text-align: center; font-size: 14px; margin-top: 10px; opacity: .7; width: 360px; }
+  .screen-wrap { display: flex; flex-direction: column; align-items: center; }
+  .step { color: var(--muted); font-size: 12px; text-align: center; margin-bottom: 18px; }
+  h1 { font-size: 24px; font-weight: 900; color: var(--accent); text-align: center; letter-spacing: -0.5px; }
+  .sub { color: var(--muted); font-size: 13px; text-align: center; margin-top: 8px; }
+  .stack { display: flex; flex-direction: column; gap: 14px; margin-top: 28px; }
+  .btn {
+    height: 54px; border-radius: 18px; display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 15px;
+  }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-outline { background: var(--surface); border: 1px solid var(--surface-2); color: var(--text); }
+  .card {
+    background: var(--surface); border: 1px solid var(--surface-2); border-radius: 18px;
+    padding: 16px; display: flex; flex-direction: column; gap: 12px; align-items: center;
+  }
+  .hint { color: var(--muted); font-size: 12.5px; text-align: center; line-height: 1.5; }
+  .spinner {
+    width: 38px; height: 38px; border-radius: 50%;
+    border: 4px solid var(--accent); border-top-color: transparent; margin: 8px auto;
+  }
+  .check {
+    width: 52px; height: 52px; border-radius: 50%; background: rgba(52,199,89,.18);
+    color: var(--green); display: flex; align-items: center; justify-content: center; font-size: 26px; margin: 0 auto;
+  }
+  .tt-logo { font-size: 34px; text-align: center; }
+  .consent {
+    background: #fff; color: #111; border-radius: 18px; padding: 20px; margin-top: 24px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .consent h2 { font-size: 16px; }
+  .consent p, .consent li { font-size: 12.5px; color: #444; line-height: 1.5; }
+  .consent ul { padding-left: 18px; }
+  .consent .allow { background: #fe2c55; color: #fff; border-radius: 10px; height: 44px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; }
+  .consent .deny { text-align: center; color: #888; font-size: 13px; }
+  .footer-note { margin-top: auto; color: var(--muted); font-size: 11px; text-align: center; }
+</style>
+</head>
+<body>
+
+<!-- Screen 1: Connect -->
+<div class="screen-wrap">
+  <div class="phone">
+    <div class="step">Step 2 of 3</div>
+    <h1>Sync TikTok Likes</h1>
+    <p class="sub">We'll use your liked videos in the game</p>
+    <div class="stack">
+      <div class="btn btn-primary">Sync TikTok Likes (desktop extension)</div>
+      <div class="card">
+        <p class="hint">No extension? Connect your TikTok account and we'll import your liked videos automatically.</p>
+        <div class="btn btn-outline" style="width:100%">Connect TikTok account (beta)</div>
+      </div>
+    </div>
+    <p class="footer-note">Your likes are only visible inside your private game room.</p>
+  </div>
+  <p class="label">1 — Onboarding: player chooses "Connect TikTok account"</p>
+</div>
+
+<!-- Screen 2: TikTok consent -->
+<div class="screen-wrap">
+  <div class="phone" style="background:#f7f7f7">
+    <div class="tt-logo">♪ TikTok</div>
+    <div class="consent">
+      <h2>"tf u like?" wants to access your TikTok data</h2>
+      <p>tf u like? is requesting a one-time transfer of your data archive to import your liked videos.</p>
+      <ul>
+        <li>Transfer a copy of your TikTok data</li>
+        <li>You can revoke access anytime in Settings</li>
+      </ul>
+      <div class="allow">Authorize transfer</div>
+      <div class="deny">Cancel</div>
+    </div>
+    <p class="footer-note" style="color:#999">Standard TikTok Login Kit consent screen (portability scope)</p>
+  </div>
+  <p class="label">2 — TikTok Login Kit authorization (portability.all)</p>
+</div>
+
+<!-- Screen 3: Importing -->
+<div class="screen-wrap">
+  <div class="phone">
+    <div class="step">Step 2 of 3</div>
+    <h1>Sync TikTok Likes</h1>
+    <p class="sub">We'll use your liked videos in the game</p>
+    <div class="stack">
+      <div class="card">
+        <div class="spinner"></div>
+        <p class="hint">Importing your likes from TikTok...<br/>TikTok is preparing your data archive. We only read your Like List and discard everything else.</p>
+      </div>
+    </div>
+    <p class="footer-note">This usually takes under a few minutes.</p>
+  </div>
+  <p class="label">3 — Data request added, polling until archive is ready</p>
+</div>
+
+<!-- Screen 4: Done -->
+<div class="screen-wrap">
+  <div class="phone">
+    <div class="step">Step 2 of 3</div>
+    <h1>Sync TikTok Likes</h1>
+    <p class="sub">We'll use your liked videos in the game</p>
+    <div class="stack">
+      <div class="card">
+        <div class="check">✓</div>
+        <p style="color:var(--green);font-weight:600;font-size:14px">Likes imported! (2,417)</p>
+        <p class="hint">Your liked videos will appear anonymously in game rounds.</p>
+      </div>
+      <div class="btn btn-primary">Next</div>
+    </div>
+  </div>
+  <p class="label">4 — Import complete, player continues onboarding</p>
+</div>
+
+</body>
+</html>
