@@ -26,10 +26,16 @@ function makeSupabaseMock() {
       name,
       handlers: [],
       statusCallback: null,
-      on: vi.fn((_type: string, config: Record<string, unknown>, handler: () => void) => {
-        mock.handlers.push({ config, handler });
-        return mock;
-      }),
+      on: vi.fn(
+        (
+          _type: string,
+          config: Record<string, unknown>,
+          handler: () => void,
+        ) => {
+          mock.handlers.push({ config, handler });
+          return mock;
+        },
+      ),
       subscribe: vi.fn((callback?: (status: string) => void) => {
         mock.statusCallback = callback ?? null;
         return mock;

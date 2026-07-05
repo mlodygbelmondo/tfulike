@@ -3,12 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Dictionary } from "@/lib/dictionaries";
 
-type ConnectState =
-  | "idle"
-  | "requesting"
-  | "waiting"
-  | "imported"
-  | "error";
+type ConnectState = "idle" | "requesting" | "waiting" | "imported" | "error";
 
 const POLL_INTERVAL_MS = 5000;
 const MAX_AUTO_POLLS = 24; // ~2 minutes, then switch to manual "check again"
@@ -25,8 +20,7 @@ export function TikTokConnectCard({
   dict: Dictionary;
   onSynced?: (likesImported: number) => void;
 }) {
-  const enabled =
-    process.env.NEXT_PUBLIC_TIKTOK_PORTABILITY_ENABLED === "true";
+  const enabled = process.env.NEXT_PUBLIC_TIKTOK_PORTABILITY_ENABLED === "true";
   const d = dict.onboarding;
   const [state, setState] = useState<ConnectState>("idle");
   const [likesImported, setLikesImported] = useState<number | null>(null);

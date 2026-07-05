@@ -16,7 +16,8 @@ function makeChain(resolveValue: { data: unknown; error: unknown }) {
   const chain: Record<string, unknown> = {};
   const proxy: unknown = new Proxy(chain, {
     get(target, prop) {
-      if (prop === "then") return (resolve: (v: unknown) => void) => resolve(resolveValue);
+      if (prop === "then")
+        return (resolve: (v: unknown) => void) => resolve(resolveValue);
       if (prop in target) return target[prop as keyof typeof target];
       const fn = vi.fn(() => proxy);
       target[prop as string] = fn;
@@ -108,8 +109,18 @@ describe("POST /api/rooms/[pin]/start", () => {
       adminResults: [
         {
           data: [
-            { id: "host-1", user_id: HOST_USER_ID, nickname: "Alice", sync_status: "synced" },
-            { id: "p2", user_id: OTHER_USER_ID, nickname: "Bob", sync_status: "synced" },
+            {
+              id: "host-1",
+              user_id: HOST_USER_ID,
+              nickname: "Alice",
+              sync_status: "synced",
+            },
+            {
+              id: "p2",
+              user_id: OTHER_USER_ID,
+              nickname: "Bob",
+              sync_status: "synced",
+            },
           ],
           error: null,
         },
@@ -135,7 +146,12 @@ describe("POST /api/rooms/[pin]/start", () => {
       adminResults: [
         {
           data: [
-            { id: "host-1", user_id: HOST_USER_ID, nickname: "Alice", sync_status: "synced" },
+            {
+              id: "host-1",
+              user_id: HOST_USER_ID,
+              nickname: "Alice",
+              sync_status: "synced",
+            },
           ],
           error: null,
         },
@@ -163,8 +179,18 @@ describe("POST /api/rooms/[pin]/start", () => {
       adminResults: [
         {
           data: [
-            { id: "host-1", user_id: HOST_USER_ID, nickname: "Alice", sync_status: "synced" },
-            { id: "p2", user_id: OTHER_USER_ID, nickname: "Bob", sync_status: "synced" },
+            {
+              id: "host-1",
+              user_id: HOST_USER_ID,
+              nickname: "Alice",
+              sync_status: "synced",
+            },
+            {
+              id: "p2",
+              user_id: OTHER_USER_ID,
+              nickname: "Bob",
+              sync_status: "synced",
+            },
           ],
           error: null,
         },
@@ -200,8 +226,18 @@ describe("POST /api/rooms/[pin]/start", () => {
       adminResults: [
         {
           data: [
-            { id: "host-1", user_id: HOST_USER_ID, nickname: "Alice", sync_status: "synced" },
-            { id: "p2", user_id: OTHER_USER_ID, nickname: "Bob", sync_status: "synced" },
+            {
+              id: "host-1",
+              user_id: HOST_USER_ID,
+              nickname: "Alice",
+              sync_status: "synced",
+            },
+            {
+              id: "p2",
+              user_id: OTHER_USER_ID,
+              nickname: "Bob",
+              sync_status: "synced",
+            },
           ],
           error: null,
         },
@@ -248,8 +284,18 @@ describe("POST /api/rooms/[pin]/start", () => {
       adminResults: [
         {
           data: [
-            { id: "host-1", user_id: HOST_USER_ID, nickname: "Alice", sync_status: "synced" },
-            { id: "p2", user_id: OTHER_USER_ID, nickname: "Bob", sync_status: "synced" },
+            {
+              id: "host-1",
+              user_id: HOST_USER_ID,
+              nickname: "Alice",
+              sync_status: "synced",
+            },
+            {
+              id: "p2",
+              user_id: OTHER_USER_ID,
+              nickname: "Bob",
+              sync_status: "synced",
+            },
           ],
           error: null,
         },
@@ -262,10 +308,34 @@ describe("POST /api/rooms/[pin]/start", () => {
         },
         {
           data: [
-            { user_id: HOST_USER_ID, tiktok_url: "https://tiktok.com/@user1/video/1", video_url: "https://example.com/1.mp4", tiktok_video_id: "1", video_urls: [] },
-            { user_id: HOST_USER_ID, tiktok_url: "https://tiktok.com/@user1/video/2", video_url: "https://example.com/2.mp4", tiktok_video_id: "2", video_urls: [] },
-            { user_id: OTHER_USER_ID, tiktok_url: "https://tiktok.com/@user2/video/3", video_url: "https://example.com/3.mp4", tiktok_video_id: "3", video_urls: [] },
-            { user_id: OTHER_USER_ID, tiktok_url: "https://tiktok.com/@user2/video/4", video_url: "https://example.com/4.mp4", tiktok_video_id: "4", video_urls: [] },
+            {
+              user_id: HOST_USER_ID,
+              tiktok_url: "https://tiktok.com/@user1/video/1",
+              video_url: "https://example.com/1.mp4",
+              tiktok_video_id: "1",
+              video_urls: [],
+            },
+            {
+              user_id: HOST_USER_ID,
+              tiktok_url: "https://tiktok.com/@user1/video/2",
+              video_url: "https://example.com/2.mp4",
+              tiktok_video_id: "2",
+              video_urls: [],
+            },
+            {
+              user_id: OTHER_USER_ID,
+              tiktok_url: "https://tiktok.com/@user2/video/3",
+              video_url: "https://example.com/3.mp4",
+              tiktok_video_id: "3",
+              video_urls: [],
+            },
+            {
+              user_id: OTHER_USER_ID,
+              tiktok_url: "https://tiktok.com/@user2/video/4",
+              video_url: "https://example.com/4.mp4",
+              tiktok_video_id: "4",
+              video_urls: [],
+            },
           ],
           error: null,
         },
@@ -277,7 +347,9 @@ describe("POST /api/rooms/[pin]/start", () => {
       ],
     });
 
-    const res = await POST(makeRequest({ player_id: "spoofed-host" }), { params });
+    const res = await POST(makeRequest({ player_id: "spoofed-host" }), {
+      params,
+    });
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.round).toBeDefined();
@@ -299,8 +371,18 @@ describe("POST /api/rooms/[pin]/start", () => {
       adminResults: [
         {
           data: [
-            { id: "host-1", user_id: HOST_USER_ID, nickname: "Alice", sync_status: "synced" },
-            { id: "p2", user_id: OTHER_USER_ID, nickname: "Bob", sync_status: "synced" },
+            {
+              id: "host-1",
+              user_id: HOST_USER_ID,
+              nickname: "Alice",
+              sync_status: "synced",
+            },
+            {
+              id: "p2",
+              user_id: OTHER_USER_ID,
+              nickname: "Bob",
+              sync_status: "synced",
+            },
           ],
           error: null,
         },
@@ -341,8 +423,18 @@ describe("POST /api/rooms/[pin]/start", () => {
       adminResults: [
         {
           data: [
-            { id: "host-1", user_id: HOST_USER_ID, nickname: "Alice", sync_status: "synced" },
-            { id: "p2", user_id: OTHER_USER_ID, nickname: "Bob", sync_status: "synced" },
+            {
+              id: "host-1",
+              user_id: HOST_USER_ID,
+              nickname: "Alice",
+              sync_status: "synced",
+            },
+            {
+              id: "p2",
+              user_id: OTHER_USER_ID,
+              nickname: "Bob",
+              sync_status: "synced",
+            },
           ],
           error: null,
         },
@@ -355,7 +447,13 @@ describe("POST /api/rooms/[pin]/start", () => {
         },
         {
           data: [
-            { user_id: HOST_USER_ID, tiktok_url: "https://tiktok.com/@user1/video/1", video_url: "https://example.com/1.mp4", tiktok_video_id: "1", video_urls: [] },
+            {
+              user_id: HOST_USER_ID,
+              tiktok_url: "https://tiktok.com/@user1/video/1",
+              video_url: "https://example.com/1.mp4",
+              tiktok_video_id: "1",
+              video_urls: [],
+            },
           ],
           error: null,
         },

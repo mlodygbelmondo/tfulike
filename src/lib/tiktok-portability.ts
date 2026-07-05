@@ -120,10 +120,7 @@ export async function addDataRequest(accessToken: string): Promise<number> {
 }
 
 export type DataRequestStatus =
-  | "pending"
-  | "downloading"
-  | "expired"
-  | "cancelled";
+  "pending" | "downloading" | "expired" | "cancelled";
 
 export async function checkDataRequest(
   accessToken: string,
@@ -231,7 +228,9 @@ export function extractLikesFromJson(root: unknown): PortabilityLike[] {
   return likes;
 }
 
-export function extractLikesFromArchive(zipBytes: Uint8Array): PortabilityLike[] {
+export function extractLikesFromArchive(
+  zipBytes: Uint8Array,
+): PortabilityLike[] {
   const files = unzipSync(zipBytes);
   const likes: PortabilityLike[] = [];
   const seen = new Set<string>();

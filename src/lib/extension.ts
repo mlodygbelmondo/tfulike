@@ -28,7 +28,9 @@ export interface ExtensionSyncResponse {
   error?: string;
 }
 
-export function normalizeExtensionSyncError(error?: string): string | undefined {
+export function normalizeExtensionSyncError(
+  error?: string,
+): string | undefined {
   if (!error) return error;
 
   if (
@@ -119,7 +121,7 @@ export function checkExtensionPresent(): Promise<string | null> {
  * Returns scraped TikTok data; the page persists it via Supabase.
  */
 export function requestExtensionSync(
-  request: ExtensionSyncRequest
+  request: ExtensionSyncRequest,
 ): Promise<ExtensionSyncResponse> {
   return new Promise((resolve) => {
     if (typeof window === "undefined") {
@@ -144,7 +146,7 @@ export function requestExtensionSync(
                 ...payload,
                 error: normalizeExtensionSyncError(payload.error),
               }
-            : { ok: false, error: "Empty response" }
+            : { ok: false, error: "Empty response" },
         );
       }
     }
@@ -155,7 +157,7 @@ export function requestExtensionSync(
         type: "TAPUJEMY_SYNC_REQUEST",
         payload: request,
       },
-      "*"
+      "*",
     );
   });
 }
@@ -166,7 +168,7 @@ export function requestExtensionSync(
  * Returns fresh video_url + video_urls on success.
  */
 export function requestVideoRefresh(
-  request: VideoRefreshRequest
+  request: VideoRefreshRequest,
 ): Promise<VideoRefreshResponse> {
   return new Promise((resolve) => {
     if (typeof window === "undefined") {
@@ -200,7 +202,7 @@ export function requestVideoRefresh(
         requestId,
         payload: request,
       },
-      "*"
+      "*",
     );
   });
 }
@@ -222,7 +224,7 @@ export interface VideoCacheUploadResponse {
  * a signed storage upload URL, so all players can stream the cached copy.
  */
 export function requestVideoCacheUpload(
-  request: VideoCacheUploadRequest
+  request: VideoCacheUploadRequest,
 ): Promise<VideoCacheUploadResponse> {
   return new Promise((resolve) => {
     if (typeof window === "undefined") {
@@ -256,7 +258,7 @@ export function requestVideoCacheUpload(
         requestId,
         payload: request,
       },
-      "*"
+      "*",
     );
   });
 }
@@ -291,7 +293,10 @@ export function requestVideoDataUri(url: string): Promise<string> {
         const payload = event.data.payload as VideoDataResponse | undefined;
         if (payload?.ok && payload.base64) {
           resolve(
-            createBlobUrlFromBase64(payload.base64, payload.content_type || "video/mp4")
+            createBlobUrlFromBase64(
+              payload.base64,
+              payload.content_type || "video/mp4",
+            ),
           );
           return;
         }
@@ -307,7 +312,7 @@ export function requestVideoDataUri(url: string): Promise<string> {
         requestId,
         payload: { url },
       },
-      "*"
+      "*",
     );
   });
 }

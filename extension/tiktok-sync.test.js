@@ -13,7 +13,7 @@ import {
 describe("buildLikedVideosUrl", () => {
   it("uses the favorite item list endpoint with secUid", () => {
     const url = new URL(
-      buildLikedVideosUrl({ secUid: "sec_123", cursor: 60, msToken: "ms_456" })
+      buildLikedVideosUrl({ secUid: "sec_123", cursor: 60, msToken: "ms_456" }),
     );
 
     expect(url.pathname).toBe("/api/favorite/item_list/");
@@ -46,7 +46,7 @@ describe("extractSecUid", () => {
             secUid: "resolved_sec_uid",
           },
         },
-      })
+      }),
     ).toBe("resolved_sec_uid");
   });
 
@@ -64,12 +64,14 @@ describe("extractUsernameFromUserDetail", () => {
             uniqueId: "cool.user",
           },
         },
-      })
+      }),
     ).toBe("cool.user");
   });
 
   it("returns null when the payload does not contain a username", () => {
-    expect(extractUsernameFromUserDetail({ userInfo: { user: {} } })).toBeNull();
+    expect(
+      extractUsernameFromUserDetail({ userInfo: { user: {} } }),
+    ).toBeNull();
   });
 });
 
@@ -84,7 +86,7 @@ describe("parseTikTokItem", () => {
           downloadAddr: "https://cdn.example.com/download.mp4",
           playAddr: "https://cdn.example.com/play.mp4",
         },
-      })
+      }),
     ).toMatchObject({
       tiktok_video_id: "123",
       tiktok_url: "https://www.tiktok.com/@author1/video/123",
@@ -99,7 +101,7 @@ describe("normalizeSyncPayload", () => {
       normalizeSyncPayload({
         username: "cool.user",
         likes: [{ tiktok_video_id: "123" }],
-      })
+      }),
     ).toEqual({
       username: "cool.user",
       likes: [{ tiktok_video_id: "123" }],
@@ -111,7 +113,12 @@ describe("normalizeSyncPayload", () => {
 describe("summarizeResponseShape", () => {
   it("reports useful response diagnostics without full payloads", () => {
     expect(
-      summarizeResponseShape({ itemList: [], hasMore: false, cursor: 0, statusCode: 0 })
+      summarizeResponseShape({
+        itemList: [],
+        hasMore: false,
+        cursor: 0,
+        statusCode: 0,
+      }),
     ).toEqual({
       keys: ["cursor", "hasMore", "itemList", "statusCode"],
       hasItemList: true,

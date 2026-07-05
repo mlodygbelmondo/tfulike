@@ -29,7 +29,11 @@ interface OnboardingFlowProps {
 
 const TOTAL_STEPS = 3;
 
-export function OnboardingFlow({ lang, dict, initialProfile }: OnboardingFlowProps) {
+export function OnboardingFlow({
+  lang,
+  dict,
+  initialProfile,
+}: OnboardingFlowProps) {
   const router = useRouter();
   const d = dict.onboarding;
 
@@ -40,10 +44,12 @@ export function OnboardingFlow({ lang, dict, initialProfile }: OnboardingFlowPro
 
   // Step 2 — sync
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(
-    initialProfile?.sync_status ?? "idle"
+    initialProfile?.sync_status ?? "idle",
   );
   const [syncError, setSyncError] = useState("");
-  const [extensionPresent, setExtensionPresent] = useState<boolean | null>(null);
+  const [extensionPresent, setExtensionPresent] = useState<boolean | null>(
+    null,
+  );
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -113,9 +119,12 @@ export function OnboardingFlow({ lang, dict, initialProfile }: OnboardingFlowPro
 
         if (!syncResponse.ok) {
           const data = await syncResponse.json().catch(() => ({}));
-          const detail = typeof data.detail === "string" && data.detail ? `: ${data.detail}` : "";
+          const detail =
+            typeof data.detail === "string" && data.detail
+              ? `: ${data.detail}`
+              : "";
           throw new Error(
-            `${typeof data.error === "string" && data.error ? data.error : d.syncError}${detail}`
+            `${typeof data.error === "string" && data.error ? data.error : d.syncError}${detail}`,
           );
         }
 
@@ -127,7 +136,9 @@ export function OnboardingFlow({ lang, dict, initialProfile }: OnboardingFlowPro
     } catch (err: unknown) {
       setSyncStatus("error");
       setSyncError(
-        err instanceof Error ? normalizeExtensionSyncError(err.message) || d.syncError : d.syncError
+        err instanceof Error
+          ? normalizeExtensionSyncError(err.message) || d.syncError
+          : d.syncError,
       );
     }
   }
@@ -199,7 +210,10 @@ export function OnboardingFlow({ lang, dict, initialProfile }: OnboardingFlowPro
           </div>
 
           <div className="flex flex-col gap-2">
-            <label htmlFor="onb-nickname" className="text-sm font-medium text-muted">
+            <label
+              htmlFor="onb-nickname"
+              className="text-sm font-medium text-muted"
+            >
               {d.nickname}
             </label>
             <input
@@ -251,7 +265,9 @@ export function OnboardingFlow({ lang, dict, initialProfile }: OnboardingFlowPro
             {syncStatus === "idle" && (
               <>
                 {extensionPresent === false && (
-                  <p className="text-center text-sm text-muted">{d.desktopSyncHint}</p>
+                  <p className="text-center text-sm text-muted">
+                    {d.desktopSyncHint}
+                  </p>
                 )}
                 <button
                   type="button"

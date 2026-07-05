@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 
 import { SoloView } from "@/components/solo-view";
 import { mockDict } from "@/__tests__/helpers/dict-mock";
@@ -18,11 +24,16 @@ vi.mock("@/lib/extension", () => ({
 import { createClient } from "@/lib/supabase/client";
 import { requestVideoDataUri } from "@/lib/extension";
 
-function makeChain(resolveValue: { data: unknown; error?: unknown; count?: number | null }) {
+function makeChain(resolveValue: {
+  data: unknown;
+  error?: unknown;
+  count?: number | null;
+}) {
   const chain: Record<string, unknown> = {};
   const proxy: unknown = new Proxy(chain, {
     get(target, prop) {
-      if (prop === "then") return (resolve: (v: unknown) => void) => resolve(resolveValue);
+      if (prop === "then")
+        return (resolve: (v: unknown) => void) => resolve(resolveValue);
       if (prop in target) return target[prop as keyof typeof target];
       const fn = vi.fn(() => proxy);
       target[prop as string] = fn;
@@ -75,7 +86,9 @@ function makeSupabaseMock(likes: Record<string, unknown>[]) {
 describe("SoloView", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(requestVideoDataUri).mockImplementation(async (url: string) => `blob:${url}`);
+    vi.mocked(requestVideoDataUri).mockImplementation(
+      async (url: string) => `blob:${url}`,
+    );
     vi.spyOn(Math, "random").mockReturnValue(0);
     vi.stubGlobal("open", vi.fn());
     vi.stubGlobal(
@@ -85,7 +98,9 @@ describe("SoloView", () => {
   });
 
   it("loads the first solo video via the extension bridge", async () => {
-    vi.mocked(createClient).mockReturnValue(makeSupabaseMock([makeLike()]) as never);
+    vi.mocked(createClient).mockReturnValue(
+      makeSupabaseMock([makeLike()]) as never,
+    );
 
     const { container } = render(<SoloView dict={mockDict} />);
 
@@ -94,8 +109,12 @@ describe("SoloView", () => {
         'video:not([aria-hidden="true"])',
       ) as HTMLVideoElement | null;
       expect(videoElement).not.toBeNull();
-      expect(requestVideoDataUri).toHaveBeenCalledWith("https://example.com/video-1.mp4");
-      expect(videoElement?.getAttribute("src")).toBe("blob:https://example.com/video-1.mp4");
+      expect(requestVideoDataUri).toHaveBeenCalledWith(
+        "https://example.com/video-1.mp4",
+      );
+      expect(videoElement?.getAttribute("src")).toBe(
+        "blob:https://example.com/video-1.mp4",
+      );
     });
   });
 
@@ -117,17 +136,23 @@ describe("SoloView", () => {
     const { container } = render(<SoloView dict={mockDict} />);
 
     await waitFor(() => {
-      expect(requestVideoDataUri).toHaveBeenCalledWith("https://example.com/video-1.mp4");
+      expect(requestVideoDataUri).toHaveBeenCalledWith(
+        "https://example.com/video-1.mp4",
+      );
     });
 
     fireEvent.click(screen.getByRole("button", { name: /next video/i }));
 
     await waitFor(() => {
-      expect(requestVideoDataUri).toHaveBeenCalledWith("https://example.com/video-2.mp4");
+      expect(requestVideoDataUri).toHaveBeenCalledWith(
+        "https://example.com/video-2.mp4",
+      );
       const videoElement = container.querySelector(
         'video:not([aria-hidden="true"])',
       ) as HTMLVideoElement | null;
-      expect(videoElement?.getAttribute("src")).toBe("blob:https://example.com/video-2.mp4");
+      expect(videoElement?.getAttribute("src")).toBe(
+        "blob:https://example.com/video-2.mp4",
+      );
     });
 
     fireEvent.click(screen.getByRole("button", { name: /previous video/i }));
@@ -136,7 +161,9 @@ describe("SoloView", () => {
       const videoElement = container.querySelector(
         'video:not([aria-hidden="true"])',
       ) as HTMLVideoElement | null;
-      expect(videoElement?.getAttribute("src")).toBe("blob:https://example.com/video-1.mp4");
+      expect(videoElement?.getAttribute("src")).toBe(
+        "blob:https://example.com/video-1.mp4",
+      );
     });
   });
 
@@ -162,7 +189,9 @@ describe("SoloView", () => {
         'video:not([aria-hidden="true"])',
       ) as NodeListOf<HTMLVideoElement>;
       const active = Array.from(videoElements).find(
-        (element) => element.getAttribute("src") === "blob:https://example.com/video-1.mp4",
+        (element) =>
+          element.getAttribute("src") ===
+          "blob:https://example.com/video-1.mp4",
       );
       expect(active).toBeTruthy();
       return active;
@@ -175,32 +204,44 @@ describe("SoloView", () => {
         'video:not([aria-hidden="true"])',
       ) as NodeListOf<HTMLVideoElement>;
       const active = Array.from(videoElements).find(
-        (element) => element.getAttribute("src") === "blob:https://example.com/video-2.mp4",
+        (element) =>
+          element.getAttribute("src") ===
+          "blob:https://example.com/video-2.mp4",
       );
       expect(active).toBeTruthy();
     });
   });
 
   it("can hide and restore the bottom controls", async () => {
-    vi.mocked(createClient).mockReturnValue(makeSupabaseMock([makeLike()]) as never);
+    vi.mocked(createClient).mockReturnValue(
+      makeSupabaseMock([makeLike()]) as never,
+    );
 
     render(<SoloView dict={mockDict} />);
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /hide controls/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /hide controls/i }),
+      ).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole("button", { name: /hide controls/i }));
 
     await waitFor(() => {
-      expect(screen.queryByRole("button", { name: /next video/i })).not.toBeInTheDocument();
-      expect(screen.getByRole("button", { name: /show controls/i })).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: /next video/i }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /show controls/i }),
+      ).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole("button", { name: /show controls/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /next video/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /next video/i }),
+      ).toBeInTheDocument();
     });
   });
 
@@ -230,16 +271,22 @@ describe("SoloView", () => {
         'video:not([aria-hidden="true"])',
       ) as NodeListOf<HTMLVideoElement>;
       const active = Array.from(videoElements).find(
-        (element) => element.getAttribute("src") === "blob:https://example.com/video-1.mp4",
+        (element) =>
+          element.getAttribute("src") ===
+          "blob:https://example.com/video-1.mp4",
       );
       expect(active).toBeTruthy();
       return active;
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /playback mode: hands-free/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /playback mode: hands-free/i }),
+    );
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /playback mode: manual/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /playback mode: manual/i }),
+      ).toBeInTheDocument();
     });
 
     (firstVideo as HTMLVideoElement).currentTime = 12;
@@ -251,7 +298,9 @@ describe("SoloView", () => {
         'video:not([aria-hidden="true"])',
       ) as NodeListOf<HTMLVideoElement>;
       const active = Array.from(videoElements).find(
-        (element) => element.getAttribute("src") === "blob:https://example.com/video-1.mp4",
+        (element) =>
+          element.getAttribute("src") ===
+          "blob:https://example.com/video-1.mp4",
       );
       expect(active).toBeTruthy();
       expect((active as HTMLVideoElement).currentTime).toBe(0);
@@ -289,7 +338,9 @@ describe("SoloView", () => {
       const element = container.querySelector(
         'video:not([aria-hidden="true"])',
       ) as HTMLVideoElement | null;
-      expect(element?.getAttribute("src")).toBe("blob:https://example.com/video-1.mp4");
+      expect(element?.getAttribute("src")).toBe(
+        "blob:https://example.com/video-1.mp4",
+      );
       return element;
     });
 
@@ -299,7 +350,9 @@ describe("SoloView", () => {
       const element = container.querySelector(
         'video:not([aria-hidden="true"])',
       ) as HTMLVideoElement | null;
-      expect(element?.getAttribute("src")).toBe("blob:https://example.com/video-2.mp4");
+      expect(element?.getAttribute("src")).toBe(
+        "blob:https://example.com/video-2.mp4",
+      );
       return element;
     });
 
@@ -309,7 +362,9 @@ describe("SoloView", () => {
       const element = container.querySelector(
         'video:not([aria-hidden="true"])',
       ) as HTMLVideoElement | null;
-      expect(element?.getAttribute("src")).toBe("blob:https://example.com/video-1.mp4");
+      expect(element?.getAttribute("src")).toBe(
+        "blob:https://example.com/video-1.mp4",
+      );
       return element;
     });
 
@@ -342,12 +397,16 @@ describe("SoloView", () => {
   });
 
   it("shows only the compact restore control when panel is hidden", async () => {
-    vi.mocked(createClient).mockReturnValue(makeSupabaseMock([makeLike()]) as never);
+    vi.mocked(createClient).mockReturnValue(
+      makeSupabaseMock([makeLike()]) as never,
+    );
 
     render(<SoloView dict={mockDict} />);
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /hide controls/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /hide controls/i }),
+      ).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole("button", { name: /hide controls/i }));
@@ -358,19 +417,25 @@ describe("SoloView", () => {
     const floatingContainer = showControlsButton.closest("div");
     expect(floatingContainer).not.toBeNull();
 
-    const controls = within(floatingContainer as HTMLElement).queryAllByRole("button");
+    const controls = within(floatingContainer as HTMLElement).queryAllByRole(
+      "button",
+    );
     expect(controls).toHaveLength(1);
   });
 
   it("opens the current TikTok in a new tab", async () => {
-    vi.mocked(createClient).mockReturnValue(makeSupabaseMock([makeLike()]) as never);
+    vi.mocked(createClient).mockReturnValue(
+      makeSupabaseMock([makeLike()]) as never,
+    );
 
     render(<SoloView dict={mockDict} />);
 
     const openSpy = vi.mocked(window.open);
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /open on tiktok/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /open on tiktok/i }),
+      ).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole("button", { name: /open on tiktok/i }));
@@ -385,12 +450,17 @@ describe("SoloView", () => {
   it("deletes the session via API and signs the user out", async () => {
     const supabase = makeSupabaseMock([makeLike()]);
     vi.mocked(createClient).mockReturnValue(supabase as never);
-    localStorage.setItem(SESSION_KEY, JSON.stringify({ playerId: "p1", roomPin: "1234" }));
+    localStorage.setItem(
+      SESSION_KEY,
+      JSON.stringify({ playerId: "p1", roomPin: "1234" }),
+    );
 
     render(<SoloView dict={mockDict} />);
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /delete session/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /delete session/i }),
+      ).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole("button", { name: /delete session/i }));
@@ -409,7 +479,10 @@ describe("SoloView", () => {
       makeSupabaseMock([
         makeLike({
           video_url: "https://example.com/video-1a.mp4",
-          video_urls: ["https://example.com/video-1a.mp4", "https://example.com/video-1b.mp4"],
+          video_urls: [
+            "https://example.com/video-1a.mp4",
+            "https://example.com/video-1b.mp4",
+          ],
         }),
       ]) as never,
     );
@@ -440,11 +513,16 @@ describe("SoloView", () => {
     fireEvent.loadedMetadata(videoElement as HTMLVideoElement);
 
     await waitFor(() => {
-      expect(requestVideoDataUri).toHaveBeenNthCalledWith(2, "https://example.com/video-1b.mp4");
+      expect(requestVideoDataUri).toHaveBeenNthCalledWith(
+        2,
+        "https://example.com/video-1b.mp4",
+      );
       const refreshedVideo = container.querySelector(
         'video:not([aria-hidden="true"])',
       ) as HTMLVideoElement | null;
-      expect(refreshedVideo?.getAttribute("src")).toBe("blob:https://example.com/video-1b.mp4");
+      expect(refreshedVideo?.getAttribute("src")).toBe(
+        "blob:https://example.com/video-1b.mp4",
+      );
     });
   });
 
@@ -471,13 +549,17 @@ describe("SoloView", () => {
     render(<SoloView dict={mockDict} />);
 
     await waitFor(() => {
-      expect(requestVideoDataUri).toHaveBeenCalledWith("https://example.com/bookmark-1.mp4");
+      expect(requestVideoDataUri).toHaveBeenCalledWith(
+        "https://example.com/bookmark-1.mp4",
+      );
     });
 
     fireEvent.click(screen.getByRole("button", { name: /likes/i }));
 
     await waitFor(() => {
-      expect(requestVideoDataUri).toHaveBeenCalledWith("https://example.com/liked-1.mp4");
+      expect(requestVideoDataUri).toHaveBeenCalledWith(
+        "https://example.com/liked-1.mp4",
+      );
     });
   });
 });

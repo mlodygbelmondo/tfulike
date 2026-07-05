@@ -4,7 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { clearSession } from "@/lib/game";
-import { checkExtensionPresent, requestVideoDataUri, requestVideoRefresh } from "@/lib/extension";
+import {
+  checkExtensionPresent,
+  requestVideoDataUri,
+  requestVideoRefresh,
+} from "@/lib/extension";
 import type { Dictionary } from "@/lib/dictionaries";
 import type { SoloVideoSource, UserBookmark, UserLike } from "@/lib/types";
 
@@ -30,7 +34,9 @@ function getLikeCandidates(video: SoloVideo | null): string[] {
   return rawCandidates
     .filter(
       (url, index, arr) =>
-        typeof url === "string" && /^https?:\/\//i.test(url) && arr.indexOf(url) === index,
+        typeof url === "string" &&
+        /^https?:\/\//i.test(url) &&
+        arr.indexOf(url) === index,
     )
     .filter((url): url is string => typeof url === "string");
 }
@@ -38,7 +44,9 @@ function getLikeCandidates(video: SoloVideo | null): string[] {
 function pickRandomUnseenIndex(videos: SoloVideo[], history: number[]): number {
   if (videos.length === 0) return -1;
 
-  const unseen = videos.map((_, index) => index).filter((index) => !history.includes(index));
+  const unseen = videos
+    .map((_, index) => index)
+    .filter((index) => !history.includes(index));
 
   const pool = unseen.length > 0 ? unseen : videos.map((_, index) => index);
   return pool[Math.floor(Math.random() * pool.length)] ?? -1;
@@ -63,7 +71,8 @@ export function SoloView({ dict }: { dict: Dictionary }) {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
   const [videos, setVideos] = useState<SoloVideo[]>([]);
-  const [selectedSource, setSelectedSource] = useState<SoloVideoSource>("bookmark");
+  const [selectedSource, setSelectedSource] =
+    useState<SoloVideoSource>("bookmark");
   const [history, setHistory] = useState<number[]>([]);
   const [historyIndex, setHistoryIndex] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -87,9 +96,17 @@ export function SoloView({ dict }: { dict: Dictionary }) {
     [filteredVideos],
   );
   const currentLike =
-    history.length > 0 ? (filteredVideos[history[historyIndex] ?? -1] ?? null) : null;
-  const videoCandidates = useMemo(() => getLikeCandidates(currentLike), [currentLike]);
-  const videoCandidatesKey = useMemo(() => videoCandidates.join(","), [videoCandidates]);
+    history.length > 0
+      ? (filteredVideos[history[historyIndex] ?? -1] ?? null)
+      : null;
+  const videoCandidates = useMemo(
+    () => getLikeCandidates(currentLike),
+    [currentLike],
+  );
+  const videoCandidatesKey = useMemo(
+    () => videoCandidates.join(","),
+    [videoCandidates],
+  );
   const videoContainerRef = useRef<HTMLDivElement | null>(null);
   const videoElementRef = useRef<HTMLVideoElement | null>(null);
   const resolvedVideoSrcRef = useRef<string | null>(null);
@@ -116,11 +133,13 @@ export function SoloView({ dict }: { dict: Dictionary }) {
       return;
     }
 
-    const [{ data: likesData, error: likesError }, { data: bookmarksData, error: bookmarksError }] =
-      await Promise.all([
-        supabase.from("user_likes").select("*").eq("user_id", user.id),
-        supabase.from("user_bookmarks").select("*").eq("user_id", user.id),
-      ]);
+    const [
+      { data: likesData, error: likesError },
+      { data: bookmarksData, error: bookmarksError },
+    ] = await Promise.all([
+      supabase.from("user_likes").select("*").eq("user_id", user.id),
+      supabase.from("user_bookmarks").select("*").eq("user_id", user.id),
+    ]);
 
     if (likesError || bookmarksError) {
       setError("Failed to load your videos.");
@@ -165,7 +184,11 @@ export function SoloView({ dict }: { dict: Dictionary }) {
   useEffect(() => {
     if (loading) return;
 
-    setHistory(filteredVideos.length === 0 ? [] : [pickRandomUnseenIndex(filteredVideos, [])]);
+    setHistory(
+      filteredVideos.length === 0
+        ? []
+        : [pickRandomUnseenIndex(filteredVideos, [])],
+    );
     setHistoryIndex(0);
   }, [filteredVideoIdsKey, filteredVideos, loading]);
 
@@ -184,7 +207,8 @@ export function SoloView({ dict }: { dict: Dictionary }) {
     }
 
     const tiktokVideoId =
-      currentLike.tiktok_video_id ?? extractVideoIdFromUrl(currentLike.tiktok_url);
+      currentLike.tiktok_video_id ??
+      extractVideoIdFromUrl(currentLike.tiktok_url);
 
     if (!tiktokVideoId) {
       setVideoLoadFailed(true);
@@ -209,7 +233,9 @@ export function SoloView({ dict }: { dict: Dictionary }) {
         result.video_url,
       ].filter(
         (url, index, arr): url is string =>
-          typeof url === "string" && /^https?:\/\//i.test(url) && arr.indexOf(url) === index,
+          typeof url === "string" &&
+          /^https?:\/\//i.test(url) &&
+          arr.indexOf(url) === index,
       );
 
       if (refreshed.length === 0) {
@@ -225,7 +251,9 @@ export function SoloView({ dict }: { dict: Dictionary }) {
 
       setVideos((currentVideos) =>
         currentVideos.map((video) =>
-          video.id === currentLike.id ? { ...replacement, source: currentLike.source } : video,
+          video.id === currentLike.id
+            ? { ...replacement, source: currentLike.source }
+            : video,
         ),
       );
     } finally {
@@ -445,7 +473,9 @@ export function SoloView({ dict }: { dict: Dictionary }) {
           />
         </div>
         <p className="max-w-md text-sm text-muted">
-          {selectedSource === "bookmark" ? dict.game.soloEmptyBookmarks : dict.game.soloEmptyLikes}
+          {selectedSource === "bookmark"
+            ? dict.game.soloEmptyBookmarks
+            : dict.game.soloEmptyLikes}
         </p>
         <button
           type="button"
@@ -453,7 +483,9 @@ export function SoloView({ dict }: { dict: Dictionary }) {
           disabled={deletingSession}
           className="min-h-11 rounded-full border border-red-500/50 px-5 text-sm font-semibold text-red-300 transition hover:border-red-400 hover:text-red-200 disabled:opacity-50"
         >
-          {deletingSession ? dict.game.soloDeletingSession : dict.game.soloDeleteSession}
+          {deletingSession
+            ? dict.game.soloDeletingSession
+            : dict.game.soloDeleteSession}
         </button>
         {error ? <p className="text-sm text-red-400">{error}</p> : null}
       </main>
@@ -522,7 +554,12 @@ export function SoloView({ dict }: { dict: Dictionary }) {
                 const container = videoContainerRef.current;
                 const currentCandidate = resolvedCandidateRef.current;
 
-                if (shouldTreatMetadataAsBroken(element.videoWidth, element.videoHeight)) {
+                if (
+                  shouldTreatMetadataAsBroken(
+                    element.videoWidth,
+                    element.videoHeight,
+                  )
+                ) {
                   if (currentCandidate) {
                     if (brokenCandidatesRef.current.has(currentCandidate)) {
                       retryingCandidateRef.current = false;
@@ -545,7 +582,9 @@ export function SoloView({ dict }: { dict: Dictionary }) {
                     ? element.videoWidth / element.videoHeight
                     : null;
                 const containerAspect =
-                  container && container.clientWidth > 0 && container.clientHeight > 0
+                  container &&
+                  container.clientWidth > 0 &&
+                  container.clientHeight > 0
                     ? container.clientWidth / container.clientHeight
                     : null;
 
@@ -556,8 +595,10 @@ export function SoloView({ dict }: { dict: Dictionary }) {
                   Number.isFinite(videoAspect) &&
                   Number.isFinite(containerAspect)
                 ) {
-                  const delta = Math.abs(videoAspect - containerAspect) / containerAspect;
-                  nextFitMode = delta <= VIDEO_COVER_ASPECT_TOLERANCE ? "cover" : "contain";
+                  const delta =
+                    Math.abs(videoAspect - containerAspect) / containerAspect;
+                  nextFitMode =
+                    delta <= VIDEO_COVER_ASPECT_TOLERANCE ? "cover" : "contain";
                 }
 
                 setVideoFitMode(nextFitMode);
@@ -617,7 +658,9 @@ export function SoloView({ dict }: { dict: Dictionary }) {
                 aria-pressed={autoAdvanceEnabled}
                 className="min-h-11 rounded-full border border-white/20 px-4 text-sm font-semibold text-white transition hover:border-white/40"
               >
-                {autoAdvanceEnabled ? dict.game.soloModeHandsFree : dict.game.soloModeManual}
+                {autoAdvanceEnabled
+                  ? dict.game.soloModeHandsFree
+                  : dict.game.soloModeManual}
               </button>
               <button
                 type="button"
@@ -662,10 +705,14 @@ export function SoloView({ dict }: { dict: Dictionary }) {
                 disabled={deletingSession}
                 className="min-h-11 rounded-full border border-red-500/50 px-4 text-sm font-semibold text-red-300 transition hover:border-red-400 hover:text-red-200 disabled:opacity-50"
               >
-                {deletingSession ? dict.game.soloDeletingSession : dict.game.soloDeleteSession}
+                {deletingSession
+                  ? dict.game.soloDeletingSession
+                  : dict.game.soloDeleteSession}
               </button>
             </div>
-            {error ? <p className="mt-3 text-center text-sm text-red-400">{error}</p> : null}
+            {error ? (
+              <p className="mt-3 text-center text-sm text-red-400">{error}</p>
+            ) : null}
           </div>
         )}
       </div>
@@ -688,7 +735,9 @@ function SourceButton({
       onClick={onClick}
       aria-pressed={active}
       className={`min-h-11 rounded-full px-4 text-sm font-semibold transition ${
-        active ? "bg-white text-black" : "border border-white/20 text-white hover:border-white/40"
+        active
+          ? "bg-white text-black"
+          : "border border-white/20 text-white hover:border-white/40"
       }`}
     >
       {label}

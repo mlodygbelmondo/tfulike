@@ -17,7 +17,7 @@ import type { RoomSettings } from "@/lib/types";
  */
 export async function POST(
   _request: Request,
-  { params }: { params: Promise<{ pin: string }> }
+  { params }: { params: Promise<{ pin: string }> },
 ) {
   try {
     const { pin } = await params;
@@ -43,7 +43,7 @@ export async function POST(
     if (roomError || !room) {
       return NextResponse.json(
         { error: "Room not found or already started" },
-        { status: 404 }
+        { status: 404 },
       );
     }
 
@@ -56,7 +56,7 @@ export async function POST(
     if (!players || players.length < 2) {
       return NextResponse.json(
         { error: "Need at least 2 players" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -65,14 +65,12 @@ export async function POST(
     if (!callerPlayer || callerPlayer.id !== room.host_player_id) {
       return NextResponse.json(
         { error: "Only the host can start the game" },
-        { status: 403 }
+        { status: 403 },
       );
     }
 
     // All players must have user_id (auth required)
-    const userIds = players
-      .filter((p) => p.user_id)
-      .map((p) => p.user_id!);
+    const userIds = players.filter((p) => p.user_id).map((p) => p.user_id!);
 
     // Check profiles' sync_status for all authenticated players
     if (userIds.length > 0) {
@@ -82,13 +80,13 @@ export async function POST(
         .in("id", userIds);
 
       const unsyncedProfiles = (profiles ?? []).filter(
-        (p) => p.sync_status !== "synced"
+        (p) => p.sync_status !== "synced",
       );
       if (unsyncedProfiles.length > 0) {
         const names = unsyncedProfiles.map((p) => p.nickname);
         return NextResponse.json(
           { error: `Players are not ready yet: ${names.join(", ")}` },
-          { status: 400 }
+          { status: 400 },
         );
       }
     }
@@ -116,21 +114,21 @@ export async function POST(
       if (userLikes) {
         // Map user_id → player_id
         const userToPlayer = new Map(
-          players
-            .filter((p) => p.user_id)
-            .map((p) => [p.user_id!, p.id])
+          players.filter((p) => p.user_id).map((p) => [p.user_id!, p.id]),
         );
 
         for (const like of userLikes) {
           const playerId = userToPlayer.get(like.user_id);
           if (!playerId) continue;
 
-          const rawVideoUrls = Array.isArray(like.video_urls) ? like.video_urls : [];
+          const rawVideoUrls = Array.isArray(like.video_urls)
+            ? like.video_urls
+            : [];
           const mergedUrls = [...rawVideoUrls, like.video_url].filter(
             (url, index, arr) =>
               typeof url === "string" &&
               /^https?:\/\//i.test(url) &&
-              arr.indexOf(url) === index
+              arr.indexOf(url) === index,
           ) as string[];
 
           const existing = likesByPlayer.get(playerId) || [];
@@ -151,13 +149,13 @@ export async function POST(
         {
           error: `${names.join(", ")} ${names.length === 1 ? "has" : "have"} no synced likes. Please sync again.`,
         },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     // Check if any player has no likes at all
     const playersWithoutLikes = players.filter(
-      (p) => p.user_id && !likesByPlayer.has(p.id)
+      (p) => p.user_id && !likesByPlayer.has(p.id),
     );
     if (playersWithoutLikes.length > 0) {
       const names = playersWithoutLikes.map((p) => p.nickname);
@@ -165,7 +163,7 @@ export async function POST(
         {
           error: `${names.join(", ")} ${names.length === 1 ? "has" : "have"} no synced likes. Please sync again.`,
         },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -182,16 +180,16 @@ export async function POST(
             videoUrls: like.video_urls,
             tiktokVideoId: like.tiktok_video_id,
           })),
-        ])
+        ]),
       ),
-      totalRounds
+      totalRounds,
     );
 
     const actualTotalRounds = roundAssignments.length;
     if (actualTotalRounds === 0) {
       return NextResponse.json(
         { error: "Not enough videos to start the game" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -207,15 +205,13 @@ export async function POST(
       used: false,
     }));
 
-    const { data: insertedVideos, error: videoInsertError } = await adminSupabase
-      .from("videos")
-      .insert(videoRows)
-      .select();
+    const { data: insertedVideos, error: videoInsertError } =
+      await adminSupabase.from("videos").insert(videoRows).select();
 
     if (videoInsertError || !insertedVideos) {
       return NextResponse.json(
         { error: "Failed to save videos" },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
@@ -246,7 +242,7 @@ export async function POST(
         .eq("id", firstVideoRow.id);
       return NextResponse.json(
         { error: "Failed to create first round" },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
@@ -266,7 +262,7 @@ export async function POST(
     if (updateError) {
       return NextResponse.json(
         { error: "Failed to update room status" },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
@@ -275,7 +271,7 @@ export async function POST(
     console.error("Game start error:", err);
     return NextResponse.json(
       { error: "Internal server error" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

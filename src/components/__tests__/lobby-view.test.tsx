@@ -28,8 +28,10 @@ vi.mock("@/lib/supabase/client", () => ({
 }));
 
 vi.mock("@/lib/extension", () => ({
-  checkExtensionPresent: (...args: unknown[]) => mockCheckExtensionPresent(...args),
-  requestExtensionSync: (...args: unknown[]) => mockRequestExtensionSync(...args),
+  checkExtensionPresent: (...args: unknown[]) =>
+    mockCheckExtensionPresent(...args),
+  requestExtensionSync: (...args: unknown[]) =>
+    mockRequestExtensionSync(...args),
 }));
 
 describe("LobbyView", () => {
@@ -122,7 +124,7 @@ describe("LobbyView", () => {
             },
             expect.any(Function),
           ],
-        ])
+        ]),
       );
     });
   });
@@ -198,8 +200,12 @@ describe("LobbyView", () => {
     render(<LobbyView lang="en" pin="6386" dict={mockDict} />);
 
     expect(await screen.findByText(mockDict.lobby.synced)).toBeInTheDocument();
-    expect(await screen.findByText(mockDict.lobby.syncIdle)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: mockDict.lobby.startGame })).toBeDisabled();
+    expect(
+      await screen.findByText(mockDict.lobby.syncIdle),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: mockDict.lobby.startGame }),
+    ).toBeDisabled();
   });
 
   it("syncs likes from the lobby and refreshes player state", async () => {
@@ -287,7 +293,9 @@ describe("LobbyView", () => {
             }
           : table === "players"
             ? {
-                data: playersByFetch[Math.min(playersFetchCount++, playersByFetch.length - 1)],
+                data: playersByFetch[
+                  Math.min(playersFetchCount++, playersByFetch.length - 1)
+                ],
                 error: null,
               }
             : { data: null, error: null };
@@ -335,7 +343,9 @@ describe("LobbyView", () => {
 
     render(<LobbyView lang="en" pin="6386" dict={mockDict} />);
 
-    await user.click(await screen.findByRole("button", { name: mockDict.lobby.syncLikes }));
+    await user.click(
+      await screen.findByRole("button", { name: mockDict.lobby.syncLikes }),
+    );
 
     await waitFor(() => {
       expect(mockRequestExtensionSync).toHaveBeenCalledWith({});
@@ -365,7 +375,11 @@ describe("LobbyView", () => {
       });
     });
 
-    expect(await screen.findAllByText(mockDict.lobby.synced)).not.toHaveLength(0);
-    expect(screen.getByRole("button", { name: mockDict.lobby.startGame })).toBeEnabled();
+    expect(await screen.findAllByText(mockDict.lobby.synced)).not.toHaveLength(
+      0,
+    );
+    expect(
+      screen.getByRole("button", { name: mockDict.lobby.startGame }),
+    ).toBeEnabled();
   });
 });

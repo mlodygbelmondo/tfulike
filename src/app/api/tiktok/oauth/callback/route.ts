@@ -1,10 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import {
-  exchangeCode,
-  isPortabilityEnabled,
-} from "@/lib/tiktok-portability";
+import { exchangeCode, isPortabilityEnabled } from "@/lib/tiktok-portability";
 
 const STATE_COOKIE = "tiktok_oauth_state";
 

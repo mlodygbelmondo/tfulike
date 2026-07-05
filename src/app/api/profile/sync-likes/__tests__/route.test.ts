@@ -49,7 +49,7 @@ describe("POST /api/profile/sync-likes", () => {
     } as never);
 
     const response = await POST(
-      makeRequest({ tiktok_username: "alice", likes: [] })
+      makeRequest({ tiktok_username: "alice", likes: [] }),
     );
 
     expect(response.status).toBe(401);
@@ -59,7 +59,9 @@ describe("POST /api/profile/sync-likes", () => {
   it("returns 400 when the payload is missing required fields", async () => {
     vi.mocked(createClient).mockResolvedValue({
       auth: {
-        getUser: vi.fn().mockResolvedValue({ data: { user: { id: "user-1" } } }),
+        getUser: vi
+          .fn()
+          .mockResolvedValue({ data: { user: { id: "user-1" } } }),
       },
     } as never);
 
@@ -93,11 +95,14 @@ describe("POST /api/profile/sync-likes", () => {
       profileSyncedUpdateSpy;
 
     const playerUpdateSpy = vi.fn(() => playerUpdate);
-    (playerUpdate as Record<string, ReturnType<typeof vi.fn>>).update = playerUpdateSpy;
+    (playerUpdate as Record<string, ReturnType<typeof vi.fn>>).update =
+      playerUpdateSpy;
 
     vi.mocked(createClient).mockResolvedValue({
       auth: {
-        getUser: vi.fn().mockResolvedValue({ data: { user: { id: "user-1" } } }),
+        getUser: vi
+          .fn()
+          .mockResolvedValue({ data: { user: { id: "user-1" } } }),
       },
     } as never);
 
@@ -123,7 +128,7 @@ describe("POST /api/profile/sync-likes", () => {
             author_username: "lider_drenazu",
           },
         ],
-      })
+      }),
     );
 
     expect(response.status).toBe(200);
@@ -144,7 +149,7 @@ describe("POST /api/profile/sync-likes", () => {
       {
         onConflict: "user_id,tiktok_video_id",
         ignoreDuplicates: false,
-      }
+      },
     );
 
     expect(profileSyncingUpdateSpy).toHaveBeenCalledWith(
@@ -152,7 +157,7 @@ describe("POST /api/profile/sync-likes", () => {
         sync_status: "syncing",
         sync_error: null,
         tiktok_username: "lider_drenazu",
-      })
+      }),
     );
 
     expect(profileSyncedUpdateSpy).toHaveBeenCalledWith(
@@ -160,7 +165,7 @@ describe("POST /api/profile/sync-likes", () => {
         sync_status: "synced",
         sync_error: null,
         tiktok_username: "lider_drenazu",
-      })
+      }),
     );
 
     expect(playerUpdateSpy).toHaveBeenCalledWith(
@@ -168,7 +173,7 @@ describe("POST /api/profile/sync-likes", () => {
         sync_status: "synced",
         sync_error: null,
         tiktok_username: "lider_drenazu",
-      })
+      }),
     );
   });
 
@@ -201,11 +206,14 @@ describe("POST /api/profile/sync-likes", () => {
       profileSyncedUpdateSpy;
 
     const playerUpdateSpy = vi.fn(() => playerUpdate);
-    (playerUpdate as Record<string, ReturnType<typeof vi.fn>>).update = playerUpdateSpy;
+    (playerUpdate as Record<string, ReturnType<typeof vi.fn>>).update =
+      playerUpdateSpy;
 
     vi.mocked(createClient).mockResolvedValue({
       auth: {
-        getUser: vi.fn().mockResolvedValue({ data: { user: { id: "user-1" } } }),
+        getUser: vi
+          .fn()
+          .mockResolvedValue({ data: { user: { id: "user-1" } } }),
       },
     } as never);
 
@@ -226,7 +234,8 @@ describe("POST /api/profile/sync-likes", () => {
         likes: [
           {
             tiktok_video_id: "liked-video-1",
-            tiktok_url: "https://www.tiktok.com/@lider_drenazu/video/liked-video-1",
+            tiktok_url:
+              "https://www.tiktok.com/@lider_drenazu/video/liked-video-1",
             video_url: "https://cdn.example.com/liked-video-1.mp4",
             video_urls: ["https://cdn.example.com/liked-video-1.mp4"],
             author_username: "lider_drenazu",
@@ -235,13 +244,14 @@ describe("POST /api/profile/sync-likes", () => {
         bookmarks: [
           {
             tiktok_video_id: "bookmark-video-1",
-            tiktok_url: "https://www.tiktok.com/@lider_drenazu/video/bookmark-video-1",
+            tiktok_url:
+              "https://www.tiktok.com/@lider_drenazu/video/bookmark-video-1",
             video_url: "https://cdn.example.com/bookmark-video-1.mp4",
             video_urls: ["https://cdn.example.com/bookmark-video-1.mp4"],
             author_username: "lider_drenazu",
           },
         ],
-      })
+      }),
     );
 
     expect(response.status).toBe(200);
@@ -264,7 +274,7 @@ describe("POST /api/profile/sync-likes", () => {
       {
         onConflict: "user_id,tiktok_video_id",
         ignoreDuplicates: false,
-      }
+      },
     );
   });
 
@@ -290,11 +300,14 @@ describe("POST /api/profile/sync-likes", () => {
       profileFinalUpdateSpy;
 
     const playerUpdateSpy = vi.fn(() => playerUpdate);
-    (playerUpdate as Record<string, ReturnType<typeof vi.fn>>).update = playerUpdateSpy;
+    (playerUpdate as Record<string, ReturnType<typeof vi.fn>>).update =
+      playerUpdateSpy;
 
     vi.mocked(createClient).mockResolvedValue({
       auth: {
-        getUser: vi.fn().mockResolvedValue({ data: { user: { id: "user-1" } } }),
+        getUser: vi
+          .fn()
+          .mockResolvedValue({ data: { user: { id: "user-1" } } }),
       },
     } as never);
 
@@ -315,13 +328,14 @@ describe("POST /api/profile/sync-likes", () => {
         bookmarks: [
           {
             tiktok_video_id: "bookmark-video-1",
-            tiktok_url: "https://www.tiktok.com/@lider_drenazu/video/bookmark-video-1",
+            tiktok_url:
+              "https://www.tiktok.com/@lider_drenazu/video/bookmark-video-1",
             video_url: "https://cdn.example.com/bookmark-video-1.mp4",
             video_urls: ["https://cdn.example.com/bookmark-video-1.mp4"],
             author_username: "lider_drenazu",
           },
         ],
-      })
+      }),
     );
 
     expect(response.status).toBe(200);
@@ -337,7 +351,7 @@ describe("POST /api/profile/sync-likes", () => {
         sync_status: "syncing",
         sync_error: null,
         tiktok_username: "lider_drenazu",
-      })
+      }),
     );
     expect(profileFinalUpdateSpy).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -345,7 +359,7 @@ describe("POST /api/profile/sync-likes", () => {
         sync_error: null,
         tiktok_username: "lider_drenazu",
         synced_at: null,
-      })
+      }),
     );
     expect(playerUpdateSpy).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -353,7 +367,7 @@ describe("POST /api/profile/sync-likes", () => {
         sync_error: null,
         tiktok_username: "lider_drenazu",
         synced_at: null,
-      })
+      }),
     );
   });
 });

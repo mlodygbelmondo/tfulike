@@ -1004,29 +1004,31 @@ describe("GamePlayView", () => {
       bytes: 1024,
     });
 
-    const fetchSpy = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url === "/api/videos/video-1/cache" && init?.method === "POST") {
-        const body = JSON.parse(String(init.body)) as { action?: string };
-        if (body.action === "upload-url") {
+    const fetchSpy = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url === "/api/videos/video-1/cache" && init?.method === "POST") {
+          const body = JSON.parse(String(init.body)) as { action?: string };
+          if (body.action === "upload-url") {
+            return new Response(
+              JSON.stringify({
+                upload: {
+                  signedUrl: uploadSignedUrl,
+                  token: "abc",
+                  path: "r1/video-1.mp4",
+                },
+              }),
+              { status: 200, headers: { "Content-Type": "application/json" } },
+            );
+          }
           return new Response(
-            JSON.stringify({
-              upload: {
-                signedUrl: uploadSignedUrl,
-                token: "abc",
-                path: "r1/video-1.mp4",
-              },
-            }),
+            JSON.stringify({ video: makeVideo({ cache_status: "ready" }) }),
             { status: 200, headers: { "Content-Type": "application/json" } },
           );
         }
-        return new Response(
-          JSON.stringify({ video: makeVideo({ cache_status: "ready" }) }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        );
-      }
-      return new Response(JSON.stringify({}), { status: 200 });
-    });
+        return new Response(JSON.stringify({}), { status: 200 });
+      },
+    );
     vi.stubGlobal("fetch", fetchSpy);
 
     render(<GamePlayView lang="pl" pin="1234" dict={mockDict} />);

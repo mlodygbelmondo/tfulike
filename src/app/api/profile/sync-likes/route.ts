@@ -37,7 +37,7 @@ async function upsertVideoCollection(
   adminSupabase: ReturnType<typeof createAdminClient>,
   table: VideoCollectionTable,
   userId: string,
-  videos: LikePayload[]
+  videos: LikePayload[],
 ) {
   if (videos.length === 0) {
     return { error: null as { message: string } | null };
@@ -77,14 +77,18 @@ export async function POST(request: Request) {
 
     const body = await request.json();
     const tiktokUsername =
-      typeof body?.tiktok_username === "string" ? body.tiktok_username.trim() : "";
+      typeof body?.tiktok_username === "string"
+        ? body.tiktok_username.trim()
+        : "";
     const likes: LikePayload[] = Array.isArray(body?.likes) ? body.likes : null;
-    const bookmarks: LikePayload[] = Array.isArray(body?.bookmarks) ? body.bookmarks : [];
+    const bookmarks: LikePayload[] = Array.isArray(body?.bookmarks)
+      ? body.bookmarks
+      : [];
 
     if (!tiktokUsername || !likes) {
       return NextResponse.json(
         { error: "Missing required fields: tiktok_username, likes[]" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -95,7 +99,10 @@ export async function POST(request: Request) {
       .single();
 
     if (profileError || !profile) {
-      return NextResponse.json({ error: "User profile not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "User profile not found" },
+        { status: 404 },
+      );
     }
 
     await adminSupabase
@@ -107,7 +114,11 @@ export async function POST(request: Request) {
       })
       .eq("id", user.id);
 
-    const collections: Array<{ table: VideoCollectionTable; label: string; videos: LikePayload[] }> = [
+    const collections: Array<{
+      table: VideoCollectionTable;
+      label: string;
+      videos: LikePayload[];
+    }> = [
       { table: "user_likes", label: "likes", videos: likes },
       { table: "user_bookmarks", label: "bookmarks", videos: bookmarks },
     ];
@@ -117,7 +128,7 @@ export async function POST(request: Request) {
         adminSupabase,
         collection.table,
         user.id,
-        collection.videos
+        collection.videos,
       );
 
       if (upsertError) {
@@ -134,7 +145,7 @@ export async function POST(request: Request) {
             error: `Failed to upsert ${collection.label}`,
             detail: upsertError.message,
           },
-          { status: 500 }
+          { status: 500 },
         );
       }
     }
@@ -148,8 +159,14 @@ export async function POST(request: Request) {
       synced_at: syncedAt,
     };
 
-    await adminSupabase.from("profiles").update(syncedUpdates).eq("id", user.id);
-    await adminSupabase.from("players").update(syncedUpdates).eq("user_id", user.id);
+    await adminSupabase
+      .from("profiles")
+      .update(syncedUpdates)
+      .eq("id", user.id);
+    await adminSupabase
+      .from("players")
+      .update(syncedUpdates)
+      .eq("user_id", user.id);
 
     return NextResponse.json({
       ok: true,
@@ -159,7 +176,7 @@ export async function POST(request: Request) {
   } catch (err) {
     return NextResponse.json(
       { error: "Internal error", detail: String(err) },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

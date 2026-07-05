@@ -60,7 +60,9 @@ function summarizeLikeForDebug(like) {
   return {
     tiktok_video_id: like?.tiktok_video_id || null,
     author_username: like?.author_username || null,
-    candidateCount: Array.isArray(like?.video_urls) ? like.video_urls.length : 0,
+    candidateCount: Array.isArray(like?.video_urls)
+      ? like.video_urls.length
+      : 0,
     primaryUrl: summarizeVideoUrl(like?.video_url),
     candidatePreview: Array.isArray(like?.video_urls)
       ? like.video_urls.slice(0, 3).map((url) => summarizeVideoUrl(url))
@@ -73,7 +75,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     handleSyncLikes(message.payload)
       .then((result) => sendResponse(result))
       .catch((err) =>
-        sendResponse({ ok: false, error: String(err.message || err) })
+        sendResponse({ ok: false, error: String(err.message || err) }),
       );
     return true;
   }
@@ -82,7 +84,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     handleVideoRefresh(message.payload)
       .then((result) => sendResponse(result))
       .catch((err) =>
-        sendResponse({ ok: false, error: String(err.message || err) })
+        sendResponse({ ok: false, error: String(err.message || err) }),
       );
     return true;
   }
@@ -91,7 +93,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     handleFetchVideoData(message.payload)
       .then((result) => sendResponse(result))
       .catch((err) =>
-        sendResponse({ ok: false, error: String(err.message || err) })
+        sendResponse({ ok: false, error: String(err.message || err) }),
       );
     return true;
   }
@@ -100,7 +102,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     handleCacheVideo(message.payload)
       .then((result) => sendResponse(result))
       .catch((err) =>
-        sendResponse({ ok: false, error: String(err.message || err) })
+        sendResponse({ ok: false, error: String(err.message || err) }),
       );
     return true;
   }
@@ -262,7 +264,10 @@ async function handleSyncLikes() {
       preview: likes.slice(0, 3).map((like) => summarizeLikeForDebug(like)),
     });
 
-    if ((!likes || likes.length === 0) && (!bookmarks || bookmarks.length === 0)) {
+    if (
+      (!likes || likes.length === 0) &&
+      (!bookmarks || bookmarks.length === 0)
+    ) {
       return {
         ok: false,
         error:
@@ -297,14 +302,19 @@ async function handleVideoRefresh(payload) {
     return { ok: false, error: "Missing tiktok_video_id for refresh" };
   }
 
-  logDebug("video-refresh-start", { tiktok_video_id, tiktok_url, author_username });
+  logDebug("video-refresh-start", {
+    tiktok_video_id,
+    tiktok_url,
+    author_username,
+  });
 
   try {
     const tab = await getTikTokTab();
     if (!tab?.id) {
       return {
         ok: false,
-        error: "No open TikTok tab. Open TikTok in desktop Chrome and try again.",
+        error:
+          "No open TikTok tab. Open TikTok in desktop Chrome and try again.",
       };
     }
 
@@ -319,7 +329,9 @@ async function handleVideoRefresh(payload) {
     logDebug("video-refresh-result", {
       tiktok_video_id,
       ok: result?.ok === true,
-      urlCount: Array.isArray(result?.video_urls) ? result.video_urls.length : 0,
+      urlCount: Array.isArray(result?.video_urls)
+        ? result.video_urls.length
+        : 0,
       error: result?.error || null,
     });
 
@@ -329,7 +341,10 @@ async function handleVideoRefresh(payload) {
 
     return result;
   } catch (err) {
-    logDebug("video-refresh-failed", { tiktok_video_id, error: String(err.message || err) });
+    logDebug("video-refresh-failed", {
+      tiktok_video_id,
+      error: String(err.message || err),
+    });
     return { ok: false, error: String(err.message || err) };
   }
 }
@@ -441,7 +456,7 @@ async function fetchTikTokLikes() {
   const tab = await getTikTokTab();
   if (!tab?.id) {
     throw new Error(
-      "Open TikTok in this desktop Chrome browser, stay logged in, and try sync again. Mobile PWA sync is not supported."
+      "Open TikTok in this desktop Chrome browser, stay logged in, and try sync again. Mobile PWA sync is not supported.",
     );
   }
 
@@ -466,7 +481,9 @@ async function fetchTikTokLikes() {
   }
 
   if (!payload.ok) {
-    throw new Error(payload.error || "TikTok sync failed inside the TikTok tab.");
+    throw new Error(
+      payload.error || "TikTok sync failed inside the TikTok tab.",
+    );
   }
 
   return normalizeSyncPayload(payload);
@@ -524,8 +541,8 @@ async function scrapeTikTokLikesInPage() {
     } catch (error) {
       throw new Error(
         `${String(error?.message || error)}; signed=${String(
-          Boolean(signature)
-        )}; contentType=${contentType}; textLength=${String(text.length)}`
+          Boolean(signature),
+        )}; contentType=${contentType}; textLength=${String(text.length)}`,
       );
     }
 
@@ -574,7 +591,8 @@ async function scrapeTikTokLikesInPage() {
       region: "PL",
       screen_height: window.screen?.height || 1080,
       screen_width: window.screen?.width || 1920,
-      tz_name: Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Warsaw",
+      tz_name:
+        Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Warsaw",
       user_is_login: true,
       secUid,
       msToken,
@@ -606,7 +624,8 @@ async function scrapeTikTokLikesInPage() {
       region: "PL",
       screen_height: window.screen?.height || 1080,
       screen_width: window.screen?.width || 1920,
-      tz_name: Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Warsaw",
+      tz_name:
+        Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Warsaw",
       user_is_login: true,
       msToken,
     });
@@ -616,17 +635,23 @@ async function scrapeTikTokLikesInPage() {
     const trimmed = typeof text === "string" ? text.trim() : "";
 
     if (!trimmed) {
-      throw new Error(`TikTok returned an empty response while loading ${step} (status ${status})`);
+      throw new Error(
+        `TikTok returned an empty response while loading ${step} (status ${status})`,
+      );
     }
 
     if (trimmed.startsWith("<")) {
-      throw new Error(`TikTok returned HTML instead of JSON while loading ${step} (status ${status})`);
+      throw new Error(
+        `TikTok returned HTML instead of JSON while loading ${step} (status ${status})`,
+      );
     }
 
     try {
       return JSON.parse(trimmed);
     } catch {
-      throw new Error(`TikTok returned invalid JSON while loading ${step} (status ${status})`);
+      throw new Error(
+        `TikTok returned invalid JSON while loading ${step} (status ${status})`,
+      );
     }
   }
 
@@ -695,7 +720,9 @@ async function scrapeTikTokLikesInPage() {
     return {
       keys: Object.keys(data || {}).sort(),
       hasItemList: Array.isArray(data?.itemList),
-      itemListLength: Array.isArray(data?.itemList) ? data.itemList.length : null,
+      itemListLength: Array.isArray(data?.itemList)
+        ? data.itemList.length
+        : null,
       hasMore: data?.hasMore ?? null,
       cursor: data?.cursor ?? null,
       statusCode: data?.statusCode ?? null,
@@ -770,7 +797,9 @@ async function scrapeTikTokLikesInPage() {
     return {
       tiktok_video_id: like?.tiktok_video_id || null,
       author_username: like?.author_username || null,
-      candidateCount: Array.isArray(like?.video_urls) ? like.video_urls.length : 0,
+      candidateCount: Array.isArray(like?.video_urls)
+        ? like.video_urls.length
+        : 0,
       primaryUrl: _summarizeVideoUrl(like?.video_url),
       candidatePreview: Array.isArray(like?.video_urls)
         ? like.video_urls.slice(0, 3).map((url) => _summarizeVideoUrl(url))
@@ -815,7 +844,10 @@ async function scrapeTikTokLikesInPage() {
       let hasMore = true;
 
       for (let page = 0; page < 10 && hasMore; page++) {
-        const result = await fetchTikTokJson(buildUrl({ secUid, cursor, msToken }), step);
+        const result = await fetchTikTokJson(
+          buildUrl({ secUid, cursor, msToken }),
+          step,
+        );
         const data = result.data;
 
         console.log("[DEBUG][tfulike-sync]", `${step}-page`, {
@@ -846,7 +878,10 @@ async function scrapeTikTokLikesInPage() {
     }
 
     const likes = await collectVideos("likes", buildLikedVideosUrl);
-    const bookmarks = await collectVideos("bookmarks", buildBookmarkedVideosUrl);
+    const bookmarks = await collectVideos(
+      "bookmarks",
+      buildBookmarkedVideosUrl,
+    );
 
     console.log("[DEBUG][tfulike-sync]", "likes-scrape-finished", {
       username,

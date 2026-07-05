@@ -64,11 +64,7 @@ export interface TikTokConnection {
 }
 
 export type TikTokDataRequestStatus =
-  | "pending"
-  | "downloading"
-  | "imported"
-  | "expired"
-  | "cancelled";
+  "pending" | "downloading" | "imported" | "expired" | "cancelled";
 
 export interface TikTokDataRequest {
   id: string;
