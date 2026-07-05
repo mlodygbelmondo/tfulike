@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { LobbyView } from "@/components/lobby-view";
 import { mockDict } from "@/__tests__/helpers/dict-mock";
@@ -381,5 +381,92 @@ describe("LobbyView", () => {
     expect(
       screen.getByRole("button", { name: mockDict.lobby.startGame }),
     ).toBeEnabled();
+  });
+
+  it("keeps the freshly clicked round count when a realtime echo of the previous value arrives mid-request", async () => {
+    from.mockImplementation((table: string) => {
+      const result =
+        table === "rooms"
+          ? {
+              data: {
+                id: "room-1",
+                pin: "6386",
+                status: "lobby",
+                host_player_id: "player-1",
+                // Server still holds the previously selected value.
+                settings: { max_rounds: 15 },
+              },
+              error: null,
+            }
+          : table === "players"
+            ? {
+                data: [
+                  {
+                    id: "player-1",
+                    room_id: "room-1",
+                    user_id: "user-1",
+                    nickname: "Alice",
+                    color: "#ff2d55",
+                    is_host: true,
+                    score: 0,
+                    videos_ready: false,
+                    tiktok_username: "alice",
+                    sync_status: "synced",
+                    sync_error: null,
+                    synced_at: null,
+                    created_at: "2025-01-01",
+                  },
+                ],
+                error: null,
+              }
+            : { data: null, error: null };
+
+      const chainState: Record<string, unknown> = {};
+      const proxy: unknown = new Proxy(chainState, {
+        get(target, prop) {
+          if (prop === "then") {
+            return (resolve: (v: unknown) => void) => resolve(result);
+          }
+          if (prop in target) return target[prop as keyof typeof target];
+          const fn = vi.fn(() => proxy);
+          target[prop as string] = fn;
+          return fn;
+        },
+      });
+
+      return proxy;
+    });
+
+    // The settings POST for the new click stays in flight until we resolve it.
+    let resolveSettingsPost: (value: unknown) => void = () => {};
+    globalThis.fetch = vi.fn().mockReturnValue(
+      new Promise((resolve) => {
+        resolveSettingsPost = resolve;
+      }),
+    ) as never;
+
+    render(<LobbyView lang="en" pin="6386" dict={mockDict} />);
+
+    const newCount = await screen.findByRole("button", { name: "25" });
+    const oldCount = screen.getByText("15", { selector: "button" });
+    fireEvent.click(newCount);
+    expect(newCount.className).toContain("bg-accent");
+
+    // Simulate the realtime echo of the earlier update (max_rounds: 15)
+    // arriving while the newer request is still pending. Deliberately not
+    // wrapped in act(): async act would block on the in-flight settings POST.
+    const roomsChange = on.mock.calls.find(
+      (call) => call[1]?.table === "rooms",
+    );
+    expect(roomsChange).toBeDefined();
+    roomsChange![2]({});
+    // Let the echo's fetchData round-trip settle.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(newCount.className).toContain("bg-accent");
+    expect(oldCount.className).not.toContain("bg-accent");
+
+    resolveSettingsPost({ ok: true, json: async () => ({}) });
+    await new Promise((resolve) => setTimeout(resolve, 0));
   });
 });

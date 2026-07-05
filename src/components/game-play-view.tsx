@@ -170,6 +170,10 @@ export function GamePlayView({
   const hostRefreshAttemptedRef = useRef<Set<string>>(new Set());
   const cacheSeedAttemptedRef = useRef<Set<string>>(new Set());
   const cacheSrcActiveRef = useRef(false);
+  // Which video id the currently set videoSrc belongs to, so row updates for
+  // the same video (fresh URLs, cache ready) don't tear down healthy playback.
+  const videoSrcVideoIdRef = useRef<string | null>(null);
+  const prevSourceKeyVideoIdRef = useRef<string | null>(null);
   const [cachePlaybackFailed, setCachePlaybackFailed] = useState(false);
 
   const videoSourceKey = [
@@ -407,6 +411,31 @@ export function GamePlayView({
       )
       .filter((url): url is string => typeof url === "string");
 
+    const currentVideoId = video?.id ?? null;
+    const sameVideo = prevSourceKeyVideoIdRef.current === currentVideoId;
+    prevSourceKeyVideoIdRef.current = currentVideoId;
+
+    // Same video, new source URLs (host published refreshed links or the
+    // cache finished) while playback is already healthy: keep playing instead
+    // of blanking back to the loader. Failed/loading playback falls through
+    // and restarts with the fresh URLs.
+    const element = videoElementRef.current;
+    if (
+      sameVideo &&
+      videoSrc &&
+      !videoLoadFailed &&
+      videoSrcVideoIdRef.current === currentVideoId &&
+      element &&
+      element.readyState >= 2
+    ) {
+      logVideoDebug("video-source-update-skipped-healthy-playback", {
+        videoId: currentVideoId,
+        candidateCount: candidates.length,
+      });
+      return;
+    }
+
+    videoSrcVideoIdRef.current = null;
     setVideoCandidates(candidates);
     setVideoCandidateIndex(0);
     setVideoLoadFailed(false);
@@ -515,8 +544,14 @@ export function GamePlayView({
       return;
     }
 
+    // Already playing this video (from any source)? Don't restart it just to
+    // switch over to the cached copy.
     const element = videoElementRef.current;
-    if (cacheSrcActiveRef.current && element && element.readyState >= 2) {
+    if (
+      element &&
+      element.readyState >= 2 &&
+      videoSrcVideoIdRef.current === video.id
+    ) {
       return;
     }
 
@@ -541,6 +576,7 @@ export function GamePlayView({
         }
 
         cacheSrcActiveRef.current = true;
+        videoSrcVideoIdRef.current = videoId;
         setVideoResolving(false);
         setVideoSrc(data.url);
         logVideoDebug("cache-playback-selected", { videoId });
@@ -967,6 +1003,22 @@ export function GamePlayView({
     return false;
   }, [videoCandidateIndex, videoCandidates.length]);
 
+  // Manual retry after a terminal failure: rewind the whole pipeline (cache
+  // playback, candidate list, one extension refresh) and run it again.
+  const handleVideoRetry = useCallback(() => {
+    videoRefreshAttemptedRef.current = false;
+    cacheSrcActiveRef.current = false;
+    videoSrcVideoIdRef.current = null;
+    setVideoRefreshAttempted(false);
+    setVideoLoadFailed(false);
+    setCachePlaybackFailed(false);
+    setVideoCandidateIndex(0);
+    setVideoSrc(null);
+    setVideoResolving(true);
+    // New array identity forces the resolution effect to run again.
+    setVideoCandidates((prev) => [...prev]);
+  }, []);
+
   useEffect(() => {
     // Cached playback takes priority; candidates are the fallback path.
     if (video?.cache_status === "ready" && !cachePlaybackFailed) {
@@ -974,6 +1026,19 @@ export function GamePlayView({
     }
 
     const candidate = videoCandidates[videoCandidateIndex] || null;
+
+    // Already playing this video? Row echoes (fresh URLs published by the
+    // host, cache transitions) must not restart healthy playback.
+    const playingElement = videoElementRef.current;
+    if (
+      candidate &&
+      videoSrcVideoIdRef.current === (video?.id ?? null) &&
+      playingElement &&
+      playingElement.readyState >= 2
+    ) {
+      return;
+    }
+
     const resolveToken = videoResolveTokenRef.current + 1;
     videoResolveTokenRef.current = resolveToken;
     cacheSrcActiveRef.current = false;
@@ -998,6 +1063,7 @@ export function GamePlayView({
     }
 
     if (playbackMode === "host_desktop" && extensionAvailable === false) {
+      videoSrcVideoIdRef.current = video?.id ?? null;
       setVideoResolving(false);
       setVideoSrc(candidate);
       return;
@@ -1011,6 +1077,7 @@ export function GamePlayView({
         }
 
         resolvedVideoSrcRef.current = blobUrl;
+        videoSrcVideoIdRef.current = video?.id ?? null;
         setVideoResolving(false);
         setVideoSrc(blobUrl);
       })
@@ -1046,9 +1113,12 @@ export function GamePlayView({
         videoResolveTokenRef.current += 1;
       }
     };
+    // `video?.cache_status` is intentionally NOT a dependency: intermediate
+    // transitions (pending -> uploading) must not restart an in-flight
+    // resolution; the cache effect above takes over when it becomes "ready".
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     video?.id,
-    video?.cache_status,
     cachePlaybackFailed,
     videoCandidates,
     videoCandidateIndex,
@@ -1371,6 +1441,7 @@ export function GamePlayView({
                     )
                   ) {
                     setVideoSrc(null);
+                    videoSrcVideoIdRef.current = null;
                     setVideoLoadFailed(false);
                     setVideoResolving(true);
                     advanceToNextVideoCandidate();
@@ -1445,6 +1516,7 @@ export function GamePlayView({
                   });
 
                   setVideoSrc(null);
+                  videoSrcVideoIdRef.current = null;
                   if (cacheSrcActiveRef.current) {
                     cacheSrcActiveRef.current = false;
                     setCachePlaybackFailed(true);
@@ -1469,16 +1541,27 @@ export function GamePlayView({
                       ? "This TikTok video expired or could not be loaded in Chrome."
                       : "Video unavailable in this round."}
                   </p>
-                  {video?.tiktok_url && (
-                    <a
-                      href={video.tiktok_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-accent underline mt-2 inline-block"
-                    >
-                      Open on TikTok
-                    </a>
-                  )}
+                  <div className="mt-2 flex items-center justify-center gap-4">
+                    {videoLoadFailed && (
+                      <button
+                        type="button"
+                        onClick={handleVideoRetry}
+                        className="text-accent underline"
+                      >
+                        Try again
+                      </button>
+                    )}
+                    {video?.tiktok_url && (
+                      <a
+                        href={video.tiktok_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-accent underline"
+                      >
+                        Open on TikTok
+                      </a>
+                    )}
+                  </div>
                 </>
               )}
             </div>

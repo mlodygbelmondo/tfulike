@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useRealtimeChannel } from "@/lib/use-realtime-channel";
@@ -32,6 +32,11 @@ export function LobbyView({
   // Round count selector
   const [selectedRounds, setSelectedRounds] = useState<number | null>(null);
   const [playbackMode, setPlaybackMode] = useState<PlaybackMode>("standard");
+  // Realtime echoes of our own settings POSTs arrive while newer clicks are
+  // still in flight; while any update is pending, local state wins.
+  const settingsPendingRef = useRef(0);
+  const roundsRequestSeqRef = useRef(0);
+  const playbackRequestSeqRef = useRef(0);
 
   // Extension detection
   const [extensionVersion, setExtensionVersion] = useState<string | null>(null);
@@ -85,16 +90,18 @@ export function LobbyView({
 
     // Load round count from settings if already set
     const settings = roomData.settings as Record<string, unknown>;
-    if (settings?.max_rounds && typeof settings.max_rounds === "number") {
-      setSelectedRounds(settings.max_rounds);
-    }
-    if (
-      typeof settings?.playback_mode === "string" &&
-      PLAYBACK_MODE_OPTIONS.includes(settings.playback_mode as PlaybackMode)
-    ) {
-      setPlaybackMode(settings.playback_mode as PlaybackMode);
-    } else {
-      setPlaybackMode("standard");
+    if (settingsPendingRef.current === 0) {
+      if (settings?.max_rounds && typeof settings.max_rounds === "number") {
+        setSelectedRounds(settings.max_rounds);
+      }
+      if (
+        typeof settings?.playback_mode === "string" &&
+        PLAYBACK_MODE_OPTIONS.includes(settings.playback_mode as PlaybackMode)
+      ) {
+        setPlaybackMode(settings.playback_mode as PlaybackMode);
+      } else {
+        setPlaybackMode("standard");
+      }
     }
 
     // Fetch players
@@ -152,25 +159,39 @@ export function LobbyView({
     setSelectedRounds(count);
     if (!room) return;
 
-    const res = await fetch(`/api/rooms/${pin}/settings`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ max_rounds: count }),
-    });
+    const seq = ++roundsRequestSeqRef.current;
+    settingsPendingRef.current += 1;
 
-    if (!res.ok) {
-      setError("Failed to update round count");
-      setSelectedRounds(
-        typeof room.settings?.max_rounds === "number"
-          ? room.settings.max_rounds
-          : null,
-      );
-      return;
-    }
+    try {
+      const res = await fetch(`/api/rooms/${pin}/settings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ max_rounds: count }),
+      });
 
-    const data = await res.json();
-    if (data?.room) {
-      setRoom(data.room as Room);
+      // A newer click superseded this request; ignore this response.
+      if (seq !== roundsRequestSeqRef.current) return;
+
+      if (!res.ok) {
+        setError("Failed to update round count");
+        setSelectedRounds(
+          typeof room.settings?.max_rounds === "number"
+            ? room.settings.max_rounds
+            : null,
+        );
+        return;
+      }
+
+      const data = await res.json();
+      if (data?.room) {
+        setRoom(data.room as Room);
+      }
+    } catch {
+      if (seq === roundsRequestSeqRef.current) {
+        setError("Failed to update round count");
+      }
+    } finally {
+      settingsPendingRef.current -= 1;
     }
   }
 
@@ -178,25 +199,39 @@ export function LobbyView({
     setPlaybackMode(mode);
     if (!room) return;
 
-    const res = await fetch(`/api/rooms/${pin}/settings`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ playback_mode: mode }),
-    });
+    const seq = ++playbackRequestSeqRef.current;
+    settingsPendingRef.current += 1;
 
-    if (!res.ok) {
-      setError("Failed to update playback mode");
-      const previousMode =
-        room.settings?.playback_mode === "host_desktop"
-          ? "host_desktop"
-          : "standard";
-      setPlaybackMode(previousMode);
-      return;
-    }
+    try {
+      const res = await fetch(`/api/rooms/${pin}/settings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ playback_mode: mode }),
+      });
 
-    const data = await res.json();
-    if (data?.room) {
-      setRoom(data.room as Room);
+      // A newer click superseded this request; ignore this response.
+      if (seq !== playbackRequestSeqRef.current) return;
+
+      if (!res.ok) {
+        setError("Failed to update playback mode");
+        const previousMode =
+          room.settings?.playback_mode === "host_desktop"
+            ? "host_desktop"
+            : "standard";
+        setPlaybackMode(previousMode);
+        return;
+      }
+
+      const data = await res.json();
+      if (data?.room) {
+        setRoom(data.room as Room);
+      }
+    } catch {
+      if (seq === playbackRequestSeqRef.current) {
+        setError("Failed to update playback mode");
+      }
+    } finally {
+      settingsPendingRef.current -= 1;
     }
   }
 
