@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "tf u like? TikTok Sync",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Syncs your TikTok liked videos for tf u like? party game",
 
   "permissions": [

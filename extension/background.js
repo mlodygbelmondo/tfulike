@@ -56,6 +56,22 @@ function summarizeVideoUrl(urlString) {
   }
 }
 
+// TikTok endpoints sometimes answer HTTP 200 with an HTML interstitial
+// (bot check / login wall). Treating that as video data poisons playback
+// and the shared cache, so anything that is not binary media is a failure.
+function isPlayableVideoContentType(contentType) {
+  if (typeof contentType !== "string" || !contentType.trim()) {
+    return true;
+  }
+  const normalized = contentType.split(";")[0].trim().toLowerCase();
+  return (
+    normalized.startsWith("video/") ||
+    normalized.startsWith("audio/") ||
+    normalized === "application/octet-stream" ||
+    normalized === "binary/octet-stream"
+  );
+}
+
 function summarizeLikeForDebug(like) {
   return {
     tiktok_video_id: like?.tiktok_video_id || null,
@@ -156,8 +172,19 @@ async function handleCacheVideo(payload) {
     return { ok: false, error: `Fetch failed with status ${response.status}` };
   }
 
-  const buffer = await response.arrayBuffer();
   const mimeType = response.headers.get("content-type") || "video/mp4";
+  if (!isPlayableVideoContentType(mimeType)) {
+    logDebug("cache-video-fetch-not-video", {
+      host: normalizedVideoUrl.host,
+      contentType: mimeType,
+    });
+    return {
+      ok: false,
+      error: `Fetch returned non-video content (${mimeType})`,
+    };
+  }
+
+  const buffer = await response.arrayBuffer();
 
   const uploadResponse = await fetch(normalizedUploadUrl.toString(), {
     method: "PUT",
@@ -226,8 +253,17 @@ async function handleFetchVideoData(payload) {
     throw new Error(`Fetch failed with status ${response.status}`);
   }
 
-  const buffer = await response.arrayBuffer();
   const mimeType = response.headers.get("content-type") || "video/mp4";
+  if (!isPlayableVideoContentType(mimeType)) {
+    logDebug("video-data-fetch-failed", {
+      status: response.status,
+      host: normalizedUrl.host,
+      contentType: mimeType,
+    });
+    throw new Error(`Fetch returned non-video content (${mimeType})`);
+  }
+
+  const buffer = await response.arrayBuffer();
   const bytes = new Uint8Array(buffer);
   const byteLength = bytes.byteLength;
 
@@ -322,7 +358,7 @@ async function handleVideoRefresh(payload) {
       target: { tabId: tab.id },
       world: "MAIN",
       func: refreshSingleVideoInPage,
-      args: [tiktok_video_id],
+      args: [tiktok_video_id, tiktok_url || null],
     });
 
     const result = results?.[0]?.result;
@@ -351,14 +387,63 @@ async function handleVideoRefresh(payload) {
 
 /**
  * Injected into TikTok tab (MAIN world) to fetch a single video's details
- * and extract fresh PlayAddr URLs.
+ * and extract fresh PlayAddr URLs. Tries the item detail API first; when
+ * TikTok bot-walls it (HTML instead of JSON), falls back to fetching the
+ * video page and reading the embedded rehydration JSON.
  */
-async function refreshSingleVideoInPage(videoId) {
-  try {
+async function refreshSingleVideoInPage(videoId, tiktokUrl) {
+  const extractVideoUrls = (item) => {
+    const videoUrls = [];
+    const pushUrl = (url) => {
+      if (typeof url !== "string") return;
+      const normalized = url.trim();
+      if (!normalized || !/^https?:\/\//i.test(normalized)) return;
+      if (!videoUrls.includes(normalized)) {
+        videoUrls.push(normalized);
+      }
+    };
+
+    pushUrl(item?.video?.playAddr);
+    pushUrl(item?.video?.downloadAddr);
+
+    if (Array.isArray(item?.video?.bitrateInfo)) {
+      for (const bitrate of item.video.bitrateInfo) {
+        if (Array.isArray(bitrate?.PlayAddr?.UrlList)) {
+          for (const url of bitrate.PlayAddr.UrlList) {
+            pushUrl(url);
+          }
+        }
+      }
+    }
+
+    return videoUrls;
+  };
+
+  const toResult = (item, sourceLabel, status) => {
+    if (!item || !item.video) {
+      return {
+        ok: false,
+        error: `Could not find video data in ${sourceLabel} (status ${status})`,
+      };
+    }
+    const videoUrls = extractVideoUrls(item);
+    if (videoUrls.length === 0) {
+      return {
+        ok: false,
+        error: `Video found in ${sourceLabel} but no playable URLs extracted`,
+      };
+    }
+    return {
+      ok: true,
+      video_url: videoUrls[0],
+      video_urls: videoUrls,
+    };
+  };
+
+  const fromDetailApi = async () => {
     const msTokenMatch = document.cookie.match(/(?:^|; )msToken=([^;]*)/);
     const msToken = msTokenMatch ? decodeURIComponent(msTokenMatch[1]) : null;
 
-    // Try the detail endpoint for a single video
     const detailUrl = new URL("/api/item/detail/", "https://www.tiktok.com");
     detailUrl.searchParams.set("itemId", videoId);
     if (msToken) detailUrl.searchParams.set("msToken", msToken);
@@ -399,48 +484,67 @@ async function refreshSingleVideoInPage(videoId) {
     }
 
     const item = data?.itemInfo?.itemStruct || data?.item || null;
-    if (!item || !item.video) {
+    return toResult(item, "detail API", response.status);
+  };
+
+  const fromVideoPage = async () => {
+    const pageUrl =
+      typeof tiktokUrl === "string" &&
+      /^https:\/\/(www\.)?tiktok\.com\//i.test(tiktokUrl)
+        ? tiktokUrl
+        : `https://www.tiktok.com/@_/video/${videoId}`;
+
+    const response = await fetch(pageUrl, {
+      credentials: "include",
+      headers: { Accept: "text/html" },
+    });
+
+    const html = await response.text();
+    const match = html.match(
+      /<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__"[^>]*>([\s\S]*?)<\/script>/,
+    );
+    if (!match) {
       return {
         ok: false,
-        error: `Could not find video data in TikTok response (status ${response.status}, statusCode ${data?.statusCode})`,
+        error: `Video page had no rehydration data (status ${response.status})`,
       };
     }
 
-    // Extract fresh URLs from bitrateInfo + playAddr + downloadAddr
-    const videoUrls = [];
-    const pushUrl = (url) => {
-      if (typeof url !== "string") return;
-      const normalized = url.trim();
-      if (!normalized || !/^https?:\/\//i.test(normalized)) return;
-      if (!videoUrls.includes(normalized)) {
-        videoUrls.push(normalized);
-      }
-    };
-
-    pushUrl(item.video?.playAddr);
-    pushUrl(item.video?.downloadAddr);
-
-    if (Array.isArray(item.video.bitrateInfo)) {
-      for (const bitrate of item.video.bitrateInfo) {
-        if (Array.isArray(bitrate?.PlayAddr?.UrlList)) {
-          for (const url of bitrate.PlayAddr.UrlList) {
-            pushUrl(url);
-          }
-        }
-      }
-    }
-
-    if (videoUrls.length === 0) {
+    let data;
+    try {
+      data = JSON.parse(match[1]);
+    } catch {
       return {
         ok: false,
-        error: "Video found but no playable URLs extracted",
+        error: `Video page rehydration data was invalid JSON (status ${response.status})`,
       };
+    }
+
+    const item =
+      data?.["__DEFAULT_SCOPE__"]?.["webapp.video-detail"]?.itemInfo
+        ?.itemStruct || null;
+    return toResult(item, "video page", response.status);
+  };
+
+  try {
+    const apiResult = await fromDetailApi();
+    if (apiResult.ok) {
+      return apiResult;
+    }
+
+    let pageResult;
+    try {
+      pageResult = await fromVideoPage();
+    } catch (err) {
+      pageResult = { ok: false, error: String(err?.message || err) };
+    }
+    if (pageResult.ok) {
+      return pageResult;
     }
 
     return {
-      ok: true,
-      video_url: videoUrls[0],
-      video_urls: videoUrls,
+      ok: false,
+      error: `${apiResult.error}; page fallback: ${pageResult.error}`,
     };
   } catch (err) {
     return {
